@@ -47,13 +47,6 @@
     .timer-urgent {
       animation: pulse-urgent 1.2s infinite ease-in-out;
     }
-    .receipt-paper {
-      background: repeating-linear-gradient(
-        #ffffff,
-        #ffffff 24px,
-        #f8fafc 25px
-      );
-    }
   </style>
 </head>
 <body class="min-h-full text-slate-800 flex flex-col font-sans selection:bg-indigo-600 selection:text-white">
@@ -204,9 +197,7 @@
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
-      <div id="modalTicketBody" class="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
-        <!-- Contenu injecté -->
-      </div>
+      <div id="modalTicketBody" class="p-5 space-y-4 max-h-[80vh] overflow-y-auto"></div>
     </div>
   </div>
 
@@ -229,7 +220,7 @@
         </div>
         <div>
           <label class="block text-xs font-semibold uppercase text-slate-600 mb-1.5">Motif obligatoire du refus pour l'Administrateur *</label>
-          <textarea id="refuseReasonInput" required rows="3" placeholder="Ex : Le montant sur la photo (42,50 €) ne correspond pas au montant déclaré (65,00 €), ou photo floue..." class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none"></textarea>
+          <textarea id="refuseReasonInput" required rows="3" placeholder="Ex : Le montant sur la photo ne correspond pas au montant déclaré, ou photo floue..." class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none"></textarea>
         </div>
         <div class="flex flex-wrap gap-1.5">
           <button type="button" onclick="setQuickRefusalReason('Montant saisi différent du ticket photographié')" class="text-xs px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700">Écart de montant</button>
@@ -326,9 +317,7 @@
       </div>
       <form id="deleteUserForm" onsubmit="confirmDeleteUser(event)" class="p-5 space-y-4">
         <input type="hidden" id="deleteUserIdInput">
-        <div id="deleteUserSummaryBox" class="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 space-y-1">
-          <!-- Peuplé dynamiquement -->
-        </div>
+        <div id="deleteUserSummaryBox" class="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 space-y-1"></div>
 
         <div class="space-y-2">
           <label class="block text-xs font-bold uppercase text-slate-600">Traitement de l'historique des tickets :</label>
@@ -435,7 +424,7 @@
     </div>
   </div>
 
-  <!-- ==================== MODALE : CONFIGURATION CLOUD FIREBASE (GITHUB PAGES / NETLIFY) ==================== -->
+  <!-- ==================== MODALE : CONFIGURATION CLOUD FIREBASE ==================== -->
   <div id="firebaseConfigModal" class="hidden fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
     <div class="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden my-8">
       <div class="px-5 py-4 bg-slate-900 text-white flex items-center justify-between">
@@ -483,7 +472,7 @@
     </div>
   </div>
 
-  <!-- Canvas caché pour la génération et la compression de photos de tickets (< 800px JPEG 0.65) -->
+  <!-- Canvas caché pour la compression de photos de tickets (< 800px JPEG 0.65) -->
   <canvas id="receiptGeneratorCanvas" width="420" height="620" class="hidden"></canvas>
   <canvas id="photoCompressionCanvas" class="hidden"></canvas>
 
@@ -496,10 +485,9 @@
     /*************************************************************************
      * 1. ÉTAT INITIAL DE L'APPLICATION & CONFIGURATION CLOUD FIRESTORE
      *************************************************************************/
-    const MONTHLY_CAP = 50.00; // Plafond strict de 50 € / mois (hors Ticket Mon patron est génial)
-    const TEN_MINUTES_MS = 10 * 60 * 1000; // 10 minutes en millisecondes
+    const MONTHLY_CAP = 50.00;
+    const TEN_MINUTES_MS = 10 * 60 * 1000;
 
-    // Configuration Firebase intégrée depuis votre projet console Firebase (ticket-jussac-carrefour)
     const EMBEDDED_GITHUB_FIREBASE_CONFIG = {
       apiKey: "AIzaSyBt-CiujRdZJuNKHkuFKapDwkyzMO-PTrM",
       authDomain: "ticket-jussac-carrefour.firebaseapp.com",
@@ -521,6 +509,7 @@
     let initialSeedInProgress = false;
 
     // Instances Chart.js pour le tableau de bord Admin
+    let adminDeferredBarChartInstance = null;
     let adminGaugeChartInstance = null;
     let adminAverageTicketChartInstance = null;
 
@@ -544,12 +533,13 @@
     }
 
     let state = {
-      currentUserId: null, // null = non connecté -> affiche l'écran de connexion par défaut
-      managerActiveTab: 'QUEUE', // 'QUEUE' | 'PERSONAL'
+      currentUserId: null,
+      managerActiveTab: 'QUEUE',
       adminActiveTab: 'DASHBOARD', // 'DASHBOARD' | 'TICKETS' | 'USERS'
-      adminTicketFilter: 'ALL', // 'ALL' | 'URGENT' | 'VALIDE' | 'EN_ATTENTE_MANAGER' | 'REJETE_ADMIN' | 'DEMANDE_SPECIALE_ADMIN'
-      adminSelectedUserId: 'ALL', // 'ALL' ou ID d'un salarié/manager pour le suivi individuel
-      revealedPasswords: {}, // { [userId]: boolean }
+      adminTicketFilter: 'ALL',
+      adminSelectedUserId: 'ALL',
+      adminTicketGroupingMode: 'BY_USER', // 'BY_USER' (Trié par compte salarié) | 'CHRONO'
+      revealedPasswords: {},
       users: getDefaultUsers(),
       tickets: []
     };
@@ -566,7 +556,6 @@
           if (!u.anneeSoldeDiffere) u.anneeSoldeDiffere = currentYear;
           return;
         }
-        // Si le compte a été créé ou utilisé une année précédente, le passage au 1er janvier remet son solde différé à 0 €
         if (u.anneeSoldeDiffere && Number(u.anneeSoldeDiffere) < currentYear) {
           if (Number(u.soldeDiffere || 0) > 0) {
             resetCount++;
@@ -582,7 +571,7 @@
 
       if (resetCount > 0) {
         showToast(
-          `🗓️ <strong>Passage au 1er Janvier ${currentYear} :</strong> Les soldes différés de <strong>${resetCount} collaborateur(s)</strong> ont été automatiquement remis à 0,00 € pour la nouvelle année.`,
+          `🗓️ <strong>Passage au 1er Janvier ${currentYear} :</strong> Les soldes différés de <strong>${resetCount} collaborateur(s)</strong> ont été automatiquement remis à 0,00 €.`,
           'info'
         );
       }
@@ -616,19 +605,9 @@
         }
       } else {
         if (hBadge) hBadge.className = 'px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition';
-        if (hText) hText.textContent = detailText || 'Mode Autonome Local (Prêt)';
+        if (hText) hText.textContent = detailText || 'Mode Autonome Local';
         if (lBadge) lBadge.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-400/30 hover:bg-amber-500/30 transition';
-        if (lText) lText.textContent = detailText || 'Mode Autonome Local • Saisie & Simulation Opérationnelles';
-        if (mBanner) {
-          mBanner.className = 'p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-3';
-          mBanner.innerHTML = `
-            <i class="fa-solid fa-triangle-exclamation text-amber-600 text-base mt-0.5"></i>
-            <div>
-              <div class="font-bold">Mode Autonome Local Activé</div>
-              <p class="text-[11px] mt-0.5 leading-relaxed">L'application fonctionne pleinement en local pour tous vos tests.</p>
-            </div>
-          `;
-        }
+        if (lText) lText.textContent = detailText || 'Mode Autonome Local';
       }
     }
 
@@ -779,13 +758,12 @@
                 }
                 state.users = loadedUsers;
               }
-              // Vérification automatique du passage au 1er janvier
               checkAndApplyAnnualJan1stReset();
               renderApp();
             }
           },
           (error) => {
-            console.error('Erreur écoute users Firestore (passage en mode local):', error);
+            console.error('Erreur écoute users Firestore:', error);
             updateCloudBadges(false, 'Mode Autonome Local');
           }
         );
@@ -814,7 +792,7 @@
         );
 
       } catch (err) {
-        console.warn('Initialisation Firebase impossible dans cet environnement, passage en mode autonome local:', err.message);
+        console.warn('Passage en mode autonome local:', err.message);
         updateCloudBadges(false, 'Mode Autonome Local');
         if (!state.users || state.users.length === 0) {
           state.users = getDefaultUsers();
@@ -858,22 +836,11 @@
         closeFirebaseConfigModal();
         showToast(`Connecté en temps réel au projet Firebase <strong>${parsed.projectId}</strong> !`, 'success');
       } catch (e) {
-        showToast('Format JSON invalide. Vérifiez la syntaxe de votre objet firebaseConfig.', 'error');
+        showToast('Format JSON invalide.', 'error');
       }
     }
 
     function downloadPreconfiguredHtmlFile() {
-      const raw = document.getElementById('customFirebaseConfigInput').value;
-      let configToEmbed = EMBEDDED_GITHUB_FIREBASE_CONFIG;
-      try {
-        if (raw && raw.trim()) {
-          configToEmbed = parseFirebaseConfigInput(raw);
-        }
-      } catch (e) {
-        showToast('Format de configuration invalide.', 'error');
-        return;
-      }
-
       const fullHtml = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
       const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
       const url = URL.createObjectURL(blob);
@@ -887,9 +854,6 @@
       showToast('Fichier <strong>index.html</strong> téléchargé !', 'success');
     }
 
-    /*************************************************************************
-     * 3. INITIALISATION VIERGE DES TICKETS
-     *************************************************************************/
     function seedInitialTickets() {
       state.tickets = [];
     }
@@ -967,7 +931,7 @@
     }
 
     /*************************************************************************
-     * 5. BOUCLE DE SURVEILLANCE DU CHRONOMÈTRE 10 MINUTES & 1ER JANVIER
+     * 5. BOUCLE DE SURVEILLANCE DU CHRONOMÈTRE 10 MINUTES
      *************************************************************************/
     function checkTicketExpirations() {
       const now = Date.now();
@@ -979,7 +943,7 @@
           changedTickets.push(ticket);
           const emp = getUserById(ticket.userId);
           showToast(
-            `<strong>Délai de 10 min écoulé (${ticket.id}) :</strong> Le ticket de ${emp ? emp.prenom + ' ' + emp.nom : 'Salarié'} n'a pas été validé à temps. Les managers ont perdu l'accès et le ticket a été transféré à l'Administrateur.`,
+            `<strong>Délai de 10 min écoulé (${ticket.id}) :</strong> Le ticket de ${emp ? emp.prenom + ' ' + emp.nom : 'Salarié'} a été transféré à l'Administrateur.`,
             'warning'
           );
         }
@@ -1020,7 +984,7 @@
     }
 
     /*************************************************************************
-     * 6. AUTHENTIFICATION (CONNEXION / DÉCONNEXION) & BANNIÈRE D'EN-TÊTE
+     * 6. AUTHENTIFICATION & BANNIÈRE D'EN-TÊTE
      *************************************************************************/
     function togglePasswordInputVisibility(inputId, iconId) {
       const input = document.getElementById(inputId);
@@ -1163,10 +1127,7 @@
       const isManager = user.role === 'MANAGER';
 
       return `
-        <!-- LIGNE 1 : JAUGE 50€ & CAGNOTTE SOLDE DIFFÉRÉ -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          <!-- Carte Jauge d'utilisation de remise -->
           <div class="lg:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col sm:flex-row items-center gap-6">
             <div class="relative w-36 h-36 flex-shrink-0">
               <svg class="w-full h-full -rotate-90" viewBox="0 0 120 120">
@@ -1226,7 +1187,6 @@
             </div>
           </div>
 
-          <!-- Carte Cagnotte / Solde du différé -->
           <div class="bg-gradient-to-br from-indigo-900 via-indigo-800 to-slate-900 text-white rounded-2xl p-6 shadow-md flex flex-col justify-between">
             <div>
               <div class="flex items-center justify-between">
@@ -1246,13 +1206,9 @@
               <i class="fa-solid fa-bolt text-amber-400"></i>
             </div>
           </div>
-
         </div>
 
-        <!-- LIGNE 2 : FORMULAIRE DE SOUMISSION DE TICKET + HISTORIQUE PERSONNEL -->
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          
-          <!-- Formulaire de soumission (7 colonnes) -->
           <div class="lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
             <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
               <div class="flex items-center gap-2.5">
@@ -1265,8 +1221,6 @@
             </div>
 
             <form id="ticketSubmissionForm" onsubmit="handleTicketSubmit(event)" class="p-6 space-y-5">
-              
-              <!-- SÉLECTEUR DE CIRCUIT : STANDARD OU TICKET MON PATRON EST GÉNIAL -->
               <div>
                 <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">
                   Circuit de validation du ticket
@@ -1302,7 +1256,6 @@
                 </div>
               </div>
 
-              <!-- BLOC DE JUSTIFICATION OBLIGATOIRE -->
               <div id="specialAdminJustificationBox" class="hidden p-4 rounded-2xl bg-purple-50/90 border-2 border-purple-300 space-y-3">
                 <div class="flex items-start gap-2.5">
                   <div class="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -1321,7 +1274,7 @@
                     Justification obligatoire « Mon patron est génial » pour l'Administrateur *
                   </label>
                   <textarea id="inputJustificationAdmin" rows="2" oninput="updateTicketFormCalculations()"
-                    placeholder="Expliquez la raison de ce Ticket Mon patron est génial (ex: accord exceptionnel au-delà des 50 €, erreur de saisie de remise en caisse, oubli de carte collaborateur...)"
+                    placeholder="Expliquez la raison de ce Ticket Mon patron est génial..."
                     class="w-full rounded-xl border border-purple-300 bg-white px-3.5 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-purple-600 focus:border-purple-600 outline-none"></textarea>
                 </div>
 
@@ -1339,11 +1292,9 @@
                 </div>
               </div>
 
-              <!-- Étape 1 : Choix Direct vs Différé -->
               <div>
                 <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">1. Mode d'application de la remise</label>
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  
                   <label class="cursor-pointer">
                     <input type="radio" name="typeRemise" value="DIRECT" checked onchange="updateTicketFormCalculations()" class="peer sr-only" />
                     <div class="p-3.5 rounded-xl border-2 border-slate-200 peer-checked:border-indigo-600 peer-checked:bg-indigo-50/60 hover:bg-slate-50 transition h-full">
@@ -1376,11 +1327,9 @@
                       <p class="text-[11px] text-slate-500 leading-snug">Demander plus de remise en décomptant votre solde (${formatEuro(user.soldeDiffere)}).</p>
                     </div>
                   </label>
-
                 </div>
               </div>
 
-              <!-- Étape 2 : Saisie des montants -->
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
                 <div>
                   <label for="inputMontantCourses" class="block text-xs font-bold text-slate-700 mb-1">
@@ -1436,12 +1385,10 @@
                 </div>
               </div>
 
-              <!-- Encadré d'analyse temps réel des règles métier -->
               <div id="liveCalculationFeedback" class="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
                 Saisissez le montant des courses avant remise pour vérifier automatiquement vos droits et le plafond de 50,00 €.
               </div>
 
-              <!-- Étape 3 : Photo du ticket de caisse -->
               <div class="pt-1">
                 <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">
                   2. Photo justificative du ticket de caisse *
@@ -1468,18 +1415,15 @@
                 </div>
               </div>
 
-              <!-- Bouton de soumission -->
               <div class="pt-2">
                 <button type="submit" id="btnSubmitTicket" class="w-full py-3 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold text-sm shadow-md shadow-indigo-500/20 transition flex items-center justify-center gap-2">
                   <i class="fa-solid fa-paper-plane"></i>
                   <span>${isManager ? 'Soumettre & Auto-valider mon ticket' : 'Soumettre mon ticket (Validation < 10 min)'}</span>
                 </button>
               </div>
-
             </form>
           </div>
 
-          <!-- Historique des tickets du compte actif (5 colonnes) -->
           <div class="lg:col-span-5 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
             <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
               <div>
@@ -1498,7 +1442,6 @@
               ` : userTickets.map(t => renderSingleTicketCardForOwner(t)).join('')}
             </div>
           </div>
-
         </div>
       `;
     }
@@ -1554,7 +1497,7 @@
           ${ticket.justificationSalarie ? `
             <div class="p-2.5 rounded-lg bg-purple-50 border border-purple-200 text-[11px] text-purple-900">
               <div class="font-bold text-purple-950 flex items-center gap-1 mb-0.5">
-                <i class="fa-solid fa-crown text-purple-600"></i> Ticket Mon patron est génial (Sans limite 50 € • Sans Manager) :
+                <i class="fa-solid fa-crown text-purple-600"></i> Ticket Mon patron est génial :
               </div>
               « ${ticket.justificationSalarie} »
             </div>
@@ -1657,7 +1600,7 @@
       if (isSpecialAdmin && justificationText.length < 5) {
         return {
           valid: false,
-          reason: '<strong>Justification obligatoire :</strong> Pour un « Ticket Mon patron est génial » (sans manager et sans limite de 50 €), vous devez rédiger une justification destinée à l’Administrateur.'
+          reason: '<strong>Justification obligatoire :</strong> Pour un « Ticket Mon patron est génial », vous devez rédiger une justification destinée à l’Administrateur.'
         };
       }
 
@@ -1685,7 +1628,7 @@
             plafonne: false,
             isDemandeSpeciale: true,
             justificationSalarie: justificationText,
-            message: `👑 <strong>Ticket « Mon patron est génial » prêt :</strong> Montant libre accepté (<strong>${formatEuro(finalRemise)}</strong>) et <strong>limite des 50 € levée</strong> (cumul après validation Admin : <strong>${formatEuro(projectedTotal)}</strong>). Envoi direct à l'Administrateur.`
+            message: `👑 <strong>Ticket « Mon patron est génial » prêt :</strong> Montant libre accepté (<strong>${formatEuro(finalRemise)}</strong>) et <strong>limite des 50 € levée</strong> (cumul après validation Admin : <strong>${formatEuro(projectedTotal)}</strong>).`
           };
         }
 
@@ -1697,7 +1640,7 @@
         if (diffFrom10 > 0.02 && diffFromCap > 0.02) {
           return {
             valid: false,
-            reason: `<strong>Blocage 10% :</strong> Pour un ticket de ${formatEuro(montantCourses)} avant remise, la remise directe à 10% doit être exactement de <strong>${formatEuro(theoretical10)}</strong> (vous avez saisi ${formatEuro(saisieDirecte)}). Si c'est une erreur de caisse ou un accord hors plafond, choisissez « Ticket Mon patron est génial ».`
+            reason: `<strong>Blocage 10% :</strong> Pour un ticket de ${formatEuro(montantCourses)} avant remise, la remise directe à 10% doit être exactement de <strong>${formatEuro(theoretical10)}</strong>.`
           };
         }
 
@@ -1705,7 +1648,7 @@
           if (theoretical10 > remainingCap) {
             return {
               valid: false,
-              reason: `<strong>Blocage Plafond Manager (50 €) :</strong> Cette remise de ${formatEuro(theoretical10)} dépasse votre reliquat mensuel de ${formatEuro(remainingCap)} (plafond 50,00 €/mois). Choisissez « Ticket Mon patron est génial » pour lever la limite de 50 €.`
+              reason: `<strong>Blocage Plafond Manager (50 €) :</strong> Cette remise de ${formatEuro(theoretical10)} dépasse votre reliquat mensuel de ${formatEuro(remainingCap)}.`
             };
           }
           return {
@@ -1723,7 +1666,7 @@
           if (remainingCap <= 0) {
             return {
               valid: false,
-              reason: `Vous avez déjà atteint votre plafond mensuel de 50,00 € ce mois-ci. Choisissez « Ticket Mon patron est génial » (sans limite de 50 €) ou utilisez votre solde différé existant (${formatEuro(user.soldeDiffere)}).`
+              reason: `Vous avez déjà atteint votre plafond mensuel de 50,00 € ce mois-ci.`
             };
           }
           const finalRemise = Math.min(theoretical10, remainingCap);
@@ -1738,8 +1681,8 @@
             isDemandeSpeciale: false,
             justificationSalarie: null,
             message: isCapped
-              ? `⚠️ <strong>Plafonnement automatique à 50,00 € :</strong> 10% donne ${formatEuro(theoretical10)}, mais il ne vous reste que <strong>${formatEuro(remainingCap)}</strong> sur votre plafond mensuel de 50 €. La remise sera plafonnée à <strong>${formatEuro(finalRemise)}</strong> pile.`
-              : `✓ Remise directe conforme de <strong>${formatEuro(finalRemise)}</strong> (10%). Nouveau cumul après validation : ${formatEuro(user.remiseUtiliseeMois + finalRemise)} / 50,00 €.`
+              ? `⚠️ <strong>Plafonnement automatique à 50,00 € :</strong> La remise sera plafonnée à <strong>${formatEuro(finalRemise)}</strong> pile.`
+              : `✓ Remise directe conforme de <strong>${formatEuro(finalRemise)}</strong> (10%).`
           };
         }
       }
@@ -1756,7 +1699,7 @@
             plafonne: false,
             isDemandeSpeciale: true,
             justificationSalarie: justificationText,
-            message: `👑 <strong>Ticket « Mon patron est génial » prêt :</strong> Envoi direct à l'Administrateur (sans manager) pour créditer <strong>+${formatEuro(theoretical10)}</strong> en différé <strong>sans limite de 50 €</strong> (nouveau cumul : ${formatEuro(projectedTotal)}).`
+            message: `👑 <strong>Ticket « Mon patron est génial » prêt :</strong> Crédite <strong>+${formatEuro(theoretical10)}</strong> en différé <strong>sans limite de 50 €</strong> (nouveau cumul : ${formatEuro(projectedTotal)}).`
           };
         }
 
@@ -1764,7 +1707,7 @@
           if (theoretical10 > remainingCap) {
             return {
               valid: false,
-              reason: `<strong>Blocage Plafond Manager (50 €) :</strong> Le cumul de ${formatEuro(theoretical10)} dépasse votre reliquat mensuel disponible (${formatEuro(remainingCap)}). Choisissez « Ticket Mon patron est génial » pour lever la limite de 50 €.`
+              reason: `<strong>Blocage Plafond Manager (50 €) :</strong> Le cumul de ${formatEuro(theoretical10)} dépasse votre reliquat mensuel disponible (${formatEuro(remainingCap)}).`
             };
           }
           return {
@@ -1782,7 +1725,7 @@
           if (remainingCap <= 0) {
             return {
               valid: false,
-              reason: `Plafond mensuel de 50,00 € atteint en circuit standard. Choisissez « Ticket Mon patron est génial » pour cumuler au-delà des 50 €.`
+              reason: `Plafond mensuel de 50,00 € atteint en circuit standard.`
             };
           }
           const finalRemise = Math.min(theoretical10, remainingCap);
@@ -1797,8 +1740,8 @@
             isDemandeSpeciale: false,
             justificationSalarie: null,
             message: isCapped
-              ? `⚠️ <strong>Plafonnement automatique à 50,00 € :</strong> La remise différée de ${formatEuro(theoretical10)} est plafonnée à votre reliquat de <strong>+${formatEuro(finalRemise)}</strong>.`
-              : `✓ Calcul automatique (10%) : <strong>+${formatEuro(finalRemise)}</strong> seront ajoutés à votre solde différé et à votre jauge mensuelle dès validation.`
+              ? `⚠️ <strong>Plafonnement automatique à 50,00 € :</strong> La remise différée est plafonnée à <strong>+${formatEuro(finalRemise)}</strong>.`
+              : `✓ Calcul automatique (10%) : <strong>+${formatEuro(finalRemise)}</strong> seront ajoutés à votre solde différé dès validation.`
           };
         }
       }
@@ -1808,13 +1751,13 @@
         if (user.soldeDiffere <= 0) {
           return {
             valid: false,
-            reason: `Votre solde différé est actuellement à 0,00 €. Choisissez "Cumuler 10%" pour alimenter votre cagnotte.`
+            reason: `Votre solde différé est actuellement à 0,00 €.`
           };
         }
         if (isNaN(soldeDemande) || soldeDemande <= 0) {
           return {
             valid: false,
-            reason: `Indiquez le montant que vous souhaitez déduire de votre solde différé (disponible : ${formatEuro(user.soldeDiffere)}).`
+            reason: `Indiquez le montant à déduire de votre solde différé (disponible : ${formatEuro(user.soldeDiffere)}).`
           };
         }
         if (soldeDemande > user.soldeDiffere) {
@@ -1839,9 +1782,7 @@
           plafonne: false,
           isDemandeSpeciale: isSpecialAdmin,
           justificationSalarie: isSpecialAdmin ? justificationText : null,
-          message: isSpecialAdmin
-            ? `👑 <strong>Ticket « Mon patron est génial » prêt :</strong> Demande directe à l'Administrateur (sans manager) pour déduire <strong>-${formatEuro(soldeDemande)}</strong> de votre solde différé.`
-            : `✓ Demande de décompte sur solde différé : <strong>-${formatEuro(soldeDemande)}</strong> seront automatiquement déduits de votre cagnotte (${formatEuro(user.soldeDiffere)} → ${formatEuro(user.soldeDiffere - soldeDemande)}) dès validation.`
+          message: `✓ Décompte sur solde différé : <strong>-${formatEuro(soldeDemande)}</strong> seront déduits de votre cagnotte dès validation.`
         };
       }
     }
@@ -1898,9 +1839,6 @@
           : (isManager
             ? `<i class="fa-solid fa-paper-plane"></i><span>Soumettre & Auto-valider mon ticket</span>`
             : `<i class="fa-solid fa-paper-plane"></i><span>Soumettre mon ticket (Validation Manager < 10 min)</span>`);
-        submitBtn.className = isSpecialAdmin
-          ? 'w-full py-3 px-5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold text-sm shadow-md shadow-purple-500/20 transition flex items-center justify-center gap-2'
-          : 'w-full py-3 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold text-sm shadow-md shadow-indigo-500/20 transition flex items-center justify-center gap-2';
       }
 
       if (!evaluation.valid) {
@@ -1967,7 +1905,7 @@
       try {
         currentDraftPhotoDataUrl = await compressUploadedImageFile(file);
         refreshPhotoPreviewUI();
-        showToast('Photo du ticket compressée et prête pour la synchronisation Cloud !', 'success');
+        showToast('Photo du ticket compressée et prête !', 'success');
       } catch (err) {
         showToast('Erreur lors du traitement de la photo.', 'error');
       }
@@ -2047,18 +1985,18 @@
 
       if (isSpecialAdmin) {
         showToast(
-          `👑 <strong>Ticket « Mon patron est génial » (${newTicket.id}) transmis directement à l'Administrateur !</strong> La limite des 50 € est levée et aucun manager n'y a accès.`,
+          `👑 <strong>Ticket « Mon patron est génial » (${newTicket.id}) transmis directement à l'Administrateur !</strong>`,
           'info'
         );
       } else if (isManager) {
         applyTicketFinancialImpact(newTicket);
         showToast(
-          `<strong>Ticket ${newTicket.id} auto-validé !</strong> Votre jauge mensuelle et votre solde différé ont été mis à jour instantanément.`,
+          `<strong>Ticket ${newTicket.id} auto-validé !</strong> Votre jauge mensuelle et votre solde différé ont été mis à jour.`,
           'success'
         );
       } else {
         showToast(
-          `<strong>Ticket ${newTicket.id} soumis !</strong> Les managers du magasin disposent de <strong>10:00 minutes</strong> pour le valider avant transfert automatique à l'Administrateur.`,
+          `<strong>Ticket ${newTicket.id} soumis !</strong> Les managers disposent de 10:00 minutes pour le valider.`,
           'success'
         );
       }
@@ -2100,7 +2038,7 @@
     }
 
     /*************************************************************************
-     * 10. VUE MANAGER (VALIDATION DES TICKETS DU MAGASIN < 10 MIN + ESPACE PERSO)
+     * 10. VUE MANAGER
      *************************************************************************/
     function renderManagerView() {
       const user = getCurrentUser();
@@ -2150,7 +2088,7 @@
             </div>
             <h3 class="text-base font-bold text-slate-900">Aucun ticket en attente dans la fenêtre des 10 minutes</h3>
             <p class="text-xs text-slate-500 max-w-md mx-auto mt-1">
-              Tous les tickets soumis récemment ont été traités ou ont dépassé le délai de 10 minutes (auquel cas seul l'Administrateur y a désormais accès).
+              Tous les tickets soumis récemment ont été traités ou ont dépassé le délai de 10 minutes.
             </p>
           </div>
         `;
@@ -2213,14 +2151,14 @@
                     ${ticket.typeRemise === 'DIFFERE_UTILISATION' ? `
                       <div class="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
                         <i class="fa-solid fa-wallet mr-1"></i>
-                        <strong>Demande de remise sur solde différé :</strong> Le salarié demande à décompter <strong>${formatEuro(ticket.montantSoldeUtilise)}</strong> de son solde différé (${formatEuro(emp ? emp.soldeDiffere : 0)} disponible). Ce montant sera déduit automatiquement dès votre validation.
+                        <strong>Demande de remise sur solde différé :</strong> Décompte de <strong>${formatEuro(ticket.montantSoldeUtilise)}</strong> sur son solde (${formatEuro(emp ? emp.soldeDiffere : 0)} disponible).
                       </div>
                     ` : ''}
 
                     ${ticket.plafonne ? `
                       <div class="p-3 rounded-xl bg-indigo-50 border border-indigo-200 text-xs text-indigo-900">
                         <i class="fa-solid fa-scale-balanced mr-1"></i>
-                        <strong>Ticket plafonné automatiquement à 50 € :</strong> Reliquat mensuel du salarié = ${formatEuro(remainingCap)}.
+                        <strong>Ticket plafonné automatiquement à 50 € :</strong> Reliquat mensuel = ${formatEuro(remainingCap)}.
                       </div>
                     ` : ''}
                   </div>
@@ -2248,7 +2186,7 @@
 
       if (Date.now() >= ticket.expiresAt || ticket.status !== 'EN_ATTENTE_MANAGER') {
         checkTicketExpirations();
-        showToast('Accès refusé : le délai de 10 minutes est écoulé. Seul l’Administrateur peut désormais valider ce ticket.', 'error');
+        showToast('Accès refusé : le délai de 10 minutes est écoulé.', 'error');
         return;
       }
 
@@ -2263,7 +2201,7 @@
       applyTicketFinancialImpact(ticket);
 
       showToast(
-        `<strong>Ticket ${ticket.id} validé !</strong> La cagnotte de ${emp ? emp.prenom + ' ' + emp.nom : ''} a été mise à jour automatiquement.`,
+        `<strong>Ticket ${ticket.id} validé !</strong> La cagnotte de ${emp ? emp.prenom + ' ' + emp.nom : ''} a été mise à jour.`,
         'success'
       );
       renderApp();
@@ -2306,14 +2244,17 @@
       closeRefuseModal();
       syncTicketToCloud(ticket);
       showToast(
-        `<strong>Ticket ${ticket.id} refusé et transmis à l'Administrateur</strong> avec votre message explicatif.`,
+        `<strong>Ticket ${ticket.id} refusé et transmis à l'Administrateur</strong>.`,
         'warning'
       );
       renderApp();
     }
 
     /*************************************************************************
-     * 11. VUE ADMINISTRATEUR (SUIVI PAR SALARIÉ/MANAGER, RAZ 1ER JANVIER & RAZ PROFIL PAR PROFIL)
+     * 11. VUE ADMINISTRATEUR :
+     *     - GRAPHIQUE BÂTONS SUR L'ARGENT DU SOLDE DIFFÉRÉ DES SALARIÉS
+     *     - TICKETS TRIÉS ET REGROUPÉS PAR COMPTE SALARIÉ / MANAGER
+     *     - REMISE À ZÉRO DU SOLDE DIFFÉRÉ PROFIL PAR PROFIL & AUTO AU 1ER JANVIER
      *************************************************************************/
     function renderAdminView() {
       const container = document.getElementById('viewAdmin');
@@ -2324,23 +2265,23 @@
         <div class="flex flex-wrap items-center justify-between gap-4 bg-white p-3 rounded-2xl shadow-sm border border-slate-200">
           <div class="flex flex-wrap gap-2">
             <button onclick="setAdminTab('DASHBOARD')" class="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition flex items-center gap-2 ${state.adminActiveTab === 'DASHBOARD' ? 'bg-slate-900 text-white shadow' : 'text-slate-600 hover:bg-slate-100'}">
-              <i class="fa-solid fa-chart-pie"></i>
-              <span>Tableau de Bord &amp; Statistiques</span>
+              <i class="fa-solid fa-chart-column"></i>
+              <span>Graphiques (Solde Différé, Jauge 50€, Ticket Moyen)</span>
             </button>
             <button onclick="setAdminTab('TICKETS')" class="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition flex items-center gap-2 ${state.adminActiveTab === 'TICKETS' ? 'bg-slate-900 text-white shadow' : 'text-slate-600 hover:bg-slate-100'}">
-              <i class="fa-solid fa-file-invoice-dollar"></i>
-              <span>Suivi des Tickets (Par Salarié / Manager)</span>
+              <i class="fa-solid fa-folder-tree"></i>
+              <span>Tickets Triés par Compte Salarié / Manager</span>
               ${urgentTickets.length > 0 ? `<span class="px-2 py-0.5 rounded-full text-xs bg-rose-500 text-white">${urgentTickets.length} à traiter</span>` : ''}
             </button>
             <button onclick="setAdminTab('USERS')" class="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition flex items-center gap-2 ${state.adminActiveTab === 'USERS' ? 'bg-slate-900 text-white shadow' : 'text-slate-600 hover:bg-slate-100'}">
               <i class="fa-solid fa-users-gear"></i>
-              <span>Gestion des Comptes &amp; Soldes Différés (${state.users.length})</span>
+              <span>Gestion des Comptes (${state.users.length})</span>
             </button>
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
-            <button onclick="resetAllDeferredBalancesAnnual()" class="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold transition flex items-center gap-1.5" title="Remet tous les soldes différés à 0 € (s'exécute aussi automatiquement chaque 1er janvier)">
-              <i class="fa-solid fa-calendar-day"></i> Clôture 1er Janvier (RAZ tous les soldes différés)
+            <button onclick="resetAllDeferredBalancesAnnual()" class="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold transition flex items-center gap-1.5" title="Remet tous les soldes différés à 0 € (s'exécute aussi automatiquement chaque 1er janvier)">
+              <i class="fa-solid fa-calendar-day text-amber-600"></i> RAZ Solde Différé 1er Janvier (Tous)
             </button>
             <button onclick="resetMonthlyGauges()" class="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold transition flex items-center gap-1.5">
               <i class="fa-solid fa-calendar-check"></i> Nouveau mois (RAZ jauges 50€)
@@ -2359,86 +2300,138 @@
     }
 
     function initAdminCharts() {
+      const deferredCanvas = document.getElementById('adminDeferredBalanceChart');
       const gaugeCanvas = document.getElementById('adminDiscountUtilizationChart');
       const avgCanvas = document.getElementById('adminAverageTicketChart');
-      if (!gaugeCanvas || !avgCanvas || typeof Chart === 'undefined') return;
+      if (typeof Chart === 'undefined') return;
 
+      if (adminDeferredBarChartInstance) adminDeferredBarChartInstance.destroy();
       if (adminGaugeChartInstance) adminGaugeChartInstance.destroy();
       if (adminAverageTicketChartInstance) adminAverageTicketChartInstance.destroy();
 
       const eligibleUsers = state.users.filter(u => u.role !== 'ADMIN');
       const validatedTickets = state.tickets.filter(t => t.status === 'VALIDE');
 
-      adminGaugeChartInstance = new Chart(gaugeCanvas, {
-        type: 'bar',
-        data: {
-          labels: eligibleUsers.map(u => `${u.prenom} ${u.nom}`),
-          datasets: [
-            {
-              label: 'Remise utilisée (€)',
-              data: eligibleUsers.map(u => Number(u.remiseUtiliseeMois || 0)),
-              backgroundColor: eligibleUsers.map(u => u.remiseUtiliseeMois > MONTHLY_CAP ? '#9333ea' : '#4f46e5'),
-              borderRadius: 8
-            },
-            {
-              label: 'Plafond standard (50 €)',
-              data: eligibleUsers.map(() => MONTHLY_CAP),
-              backgroundColor: '#e2e8f0',
-              borderRadius: 8
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }
+      // 1. NOUVEAU GRAPHIQUE EN BÂTONS : Solde du compte différé par salarié / manager (€)
+      if (deferredCanvas) {
+        adminDeferredBarChartInstance = new Chart(deferredCanvas, {
+          type: 'bar',
+          data: {
+            labels: eligibleUsers.length > 0
+              ? eligibleUsers.map(u => `${u.prenom} ${u.nom} (${u.role === 'MANAGER' ? 'Mgr' : 'Sal'})`)
+              : ['Aucun salarié créé'],
+            datasets: [
+              {
+                label: 'Argent sur le Solde du Compte Différé (€)',
+                data: eligibleUsers.length > 0
+                  ? eligibleUsers.map(u => Number(u.soldeDiffere || 0))
+                  : [0],
+                backgroundColor: eligibleUsers.map(u => u.role === 'MANAGER' ? '#f59e0b' : '#4f46e5'),
+                borderColor: eligibleUsers.map(u => u.role === 'MANAGER' ? '#d97706' : '#4338ca'),
+                borderWidth: 1.5,
+                borderRadius: 8,
+                barThickness: 38
+              }
+            ]
           },
-          scales: {
-            y: { beginAtZero: true, suggestedMax: 60, ticks: { callback: v => v + ' €' } }
-          }
-        }
-      });
-
-      const recentValidated = [...validatedTickets].slice(0, 8).reverse();
-      const avgVal = validatedTickets.length > 0
-        ? validatedTickets.reduce((s, t) => s + Number(t.montantCourses || 0), 0) / validatedTickets.length
-        : 0;
-
-      adminAverageTicketChartInstance = new Chart(avgCanvas, {
-        type: 'bar',
-        data: {
-          labels: recentValidated.map(t => t.id),
-          datasets: [
-            {
-              type: 'line',
-              label: `Ticket Moyen (${avgVal.toFixed(2)} €)`,
-              data: recentValidated.map(() => Number(avgVal.toFixed(2))),
-              borderColor: '#10b981',
-              borderWidth: 2,
-              borderDash: [5, 5],
-              pointRadius: 0
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'top', labels: { boxWidth: 14, font: { size: 12, weight: 'bold' } } },
+              tooltip: {
+                callbacks: {
+                  label: ctx => ` Solde différé disponible : ${Number(ctx.raw || 0).toFixed(2)} €`
+                }
+              }
             },
-            {
-              type: 'bar',
-              label: 'Montant courses avant remise (€)',
-              data: recentValidated.map(t => Number(t.montantCourses || 0)),
-              backgroundColor: '#6366f1',
-              borderRadius: 6
+            scales: {
+              y: {
+                beginAtZero: true,
+                suggestedMax: 30,
+                ticks: { callback: v => v + ' €' }
+              }
             }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }
-          },
-          scales: {
-            y: { beginAtZero: true, ticks: { callback: v => v + ' €' } }
           }
-        }
-      });
+        });
+      }
+
+      // 2. Graphique : Utilisation des remises (50 € max / collaborateur)
+      if (gaugeCanvas) {
+        adminGaugeChartInstance = new Chart(gaugeCanvas, {
+          type: 'bar',
+          data: {
+            labels: eligibleUsers.map(u => `${u.prenom} ${u.nom}`),
+            datasets: [
+              {
+                label: 'Remise mensuelle utilisée (€)',
+                data: eligibleUsers.map(u => Number(u.remiseUtiliseeMois || 0)),
+                backgroundColor: eligibleUsers.map(u => u.remiseUtiliseeMois > MONTHLY_CAP ? '#9333ea' : '#4f46e5'),
+                borderRadius: 8
+              },
+              {
+                label: 'Plafond standard (50 €)',
+                data: eligibleUsers.map(() => MONTHLY_CAP),
+                backgroundColor: '#e2e8f0',
+                borderRadius: 8
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }
+            },
+            scales: {
+              y: { beginAtZero: true, suggestedMax: 60, ticks: { callback: v => v + ' €' } }
+            }
+          }
+        });
+      }
+
+      // 3. Graphique : Évolution des tickets validés & Ticket Moyen
+      if (avgCanvas) {
+        const recentValidated = [...validatedTickets].slice(0, 8).reverse();
+        const avgVal = validatedTickets.length > 0
+          ? validatedTickets.reduce((s, t) => s + Number(t.montantCourses || 0), 0) / validatedTickets.length
+          : 0;
+
+        adminAverageTicketChartInstance = new Chart(avgCanvas, {
+          type: 'bar',
+          data: {
+            labels: recentValidated.map(t => t.id),
+            datasets: [
+              {
+                type: 'line',
+                label: `Ticket Moyen (${avgVal.toFixed(2)} €)`,
+                data: recentValidated.map(() => Number(avgVal.toFixed(2))),
+                borderColor: '#10b981',
+                borderWidth: 2,
+                borderDash: [5, 5],
+                pointRadius: 0
+              },
+              {
+                type: 'bar',
+                label: 'Montant courses avant remise (€)',
+                data: recentValidated.map(t => Number(t.montantCourses || 0)),
+                backgroundColor: '#6366f1',
+                borderRadius: 6
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }
+            },
+            scales: {
+              y: { beginAtZero: true, ticks: { callback: v => v + ' €' } }
+            }
+          }
+        });
+      }
     }
 
     function setAdminTab(tab) {
@@ -2456,7 +2449,11 @@
       renderApp();
     }
 
-    // Permet depuis "Gestion des Comptes" ou le Dashboard d'ouvrir directement le suivi des tickets d'un salarié ou manager précis
+    function setAdminGroupingMode(mode) {
+      state.adminTicketGroupingMode = mode;
+      renderApp();
+    }
+
     function inspectCollaboratorTickets(userId) {
       state.adminSelectedUserId = userId;
       state.adminTicketFilter = 'ALL';
@@ -2502,7 +2499,7 @@
       renderApp();
     }
 
-    // --- SOUS-VUE ADMIN 1 : TABLEAU DE BORD & GRAPHIQUES ---
+    // --- SOUS-VUE ADMIN 1 : TABLEAU DE BORD AVEC GRAPHIQUE BÂTONS SOLDE DIFFÉRÉ ---
     function renderAdminDashboardHTML() {
       const validatedTickets = state.tickets.filter(t => t.status === 'VALIDE');
       const eligibleUsers = state.users.filter(u => u.role !== 'ADMIN');
@@ -2527,20 +2524,13 @@
                 <i class="fa-solid fa-bell"></i>
               </div>
               <div>
-                <h3 class="text-sm font-bold text-rose-950">${urgentTickets.length} ticket(s) requièrent l'intervention exclusive de l'Administrateur (dont ${specialRequests.length} Ticket(s) « Mon patron est génial »)</h3>
-                <p class="text-xs text-rose-800">Inclut les Tickets « Mon patron est génial » (sans manager et sans limite de 50 €), les tickets expirés (&gt; 10 min) et les refus motivés des managers.</p>
+                <h3 class="text-sm font-bold text-rose-950">${urgentTickets.length} ticket(s) en attente de validation Administrateur</h3>
+                <p class="text-xs text-rose-800">Inclut les Tickets « Mon patron est génial » (${specialRequests.length}), les tickets expirés (&gt; 10 min) et les refus motivés des managers.</p>
               </div>
             </div>
-            <div class="flex flex-wrap gap-2">
-              ${specialRequests.length > 0 ? `
-                <button onclick="setAdminTab('TICKETS'); setAdminTicketFilter('DEMANDE_SPECIALE_ADMIN');" class="px-3.5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold whitespace-nowrap shadow-sm">
-                  <i class="fa-solid fa-crown mr-1"></i> Voir « Mon patron est génial » (${specialRequests.length})
-                </button>
-              ` : ''}
-              <button onclick="setAdminTab('TICKETS'); setAdminTicketFilter('URGENT');" class="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold whitespace-nowrap shadow-sm">
-                Traiter tout maintenant →
-              </button>
-            </div>
+            <button onclick="setAdminTab('TICKETS'); setAdminTicketFilter('URGENT');" class="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold whitespace-nowrap shadow-sm">
+              Traiter maintenant →
+            </button>
           </div>
         ` : ''}
 
@@ -2548,12 +2538,23 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
             <div class="flex items-center justify-between text-xs font-semibold text-slate-500">
+              <span>TOTAL SOLDES DIFFÉRÉS</span>
+              <span class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center"><i class="fa-solid fa-piggy-bank"></i></span>
+            </div>
+            <div class="text-2xl font-extrabold font-mono text-indigo-700 mt-2">${formatEuro(totalSoldeDiffereStore)}</div>
+            <p class="text-[11px] text-slate-500 mt-1">
+              RAZ auto chaque 1er janvier ou profil par profil
+            </p>
+          </div>
+
+          <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+            <div class="flex items-center justify-between text-xs font-semibold text-slate-500">
               <span>TICKET MOYEN (VALIDÉS)</span>
               <span class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center"><i class="fa-solid fa-basket-shopping"></i></span>
             </div>
             <div class="text-2xl font-extrabold font-mono text-slate-900 mt-2">${formatEuro(averageTicket)}</div>
             <p class="text-[11px] text-emerald-700 font-medium mt-1">
-              Calculé sur ${totalValidatedCount} ticket(s) validé(s) (${formatEuro(sumCoursesValidated)} CA)
+              Sur ${totalValidatedCount} ticket(s) validé(s) (${formatEuro(sumCoursesValidated)} CA)
             </p>
           </div>
 
@@ -2564,18 +2565,7 @@
             </div>
             <div class="text-2xl font-extrabold font-mono text-slate-900 mt-2">${globalUtilizationRate.toFixed(1)}%</div>
             <p class="text-[11px] text-slate-500 mt-1">
-              ${formatEuro(totalDiscountUsedStore)} utilisés sur ${formatEuro(maxStoreDiscountCapacity)} d'enveloppe (50€/pers)
-            </p>
-          </div>
-
-          <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-            <div class="flex items-center justify-between text-xs font-semibold text-slate-500">
-              <span>ENCOURS SOLDE DIFFÉRÉ</span>
-              <span class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center"><i class="fa-solid fa-piggy-bank"></i></span>
-            </div>
-            <div class="text-2xl font-extrabold font-mono text-indigo-700 mt-2">${formatEuro(totalSoldeDiffereStore)}</div>
-            <p class="text-[11px] text-slate-500 mt-1">
-              RAZ auto chaque 1er janvier (ou profil par profil)
+              ${formatEuro(totalDiscountUsedStore)} utilisés sur ${formatEuro(maxStoreDiscountCapacity)}
             </p>
           </div>
 
@@ -2586,20 +2576,86 @@
             </div>
             <div class="text-2xl font-extrabold font-mono ${urgentTickets.length > 0 ? 'text-rose-600' : 'text-slate-900'} mt-2">${urgentTickets.length}</div>
             <p class="text-[11px] text-slate-500 mt-1">
-              « Mon patron est génial » (${specialRequests.length}), expirés ou refusés
+              Dont ${specialRequests.length} « Mon patron est génial »
             </p>
           </div>
         </div>
 
-        <!-- GRAPHIQUES -->
+        <!-- ==================== NOUVEAU GRAPHIQUE BÂTONS : SOLDE DE COMPTE DIFFÉRÉ PAR SALARIÉ ==================== -->
+        <div class="bg-white rounded-2xl p-6 shadow-sm border-2 border-indigo-200 space-y-5">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-bold"><i class="fa-solid fa-chart-column mr-1"></i>Graphique Bâtons</span>
+                <h3 class="font-extrabold text-base sm:text-lg text-slate-900">Argent des Salariés &amp; Managers sur leur Solde de Compte Différé (€)</h3>
+              </div>
+              <p class="text-xs text-slate-500 mt-1">
+                Visualisation en bâtons de la cagnotte différée de chaque collaborateur • <strong>Remise à zéro automatique chaque 1er janvier</strong> ou remise à zéro individuelle ci-dessous.
+              </p>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-800 border border-indigo-200 font-mono text-xs font-extrabold">
+                Total Cagnotte Magasin : ${formatEuro(totalSoldeDiffereStore)}
+              </span>
+            </div>
+          </div>
+
+          <!-- Canvas Chart.js pour le graphique en bâtons du solde différé -->
+          <div class="h-64 w-full">
+            <canvas id="adminDeferredBalanceChart"></canvas>
+          </div>
+
+          <!-- Cartes individuelles sous le graphique en bâtons pour remettre à zéro profil par profil ou voir ses tickets -->
+          <div class="pt-2 border-t border-slate-100">
+            <div class="text-xs font-bold uppercase text-slate-500 mb-3 flex items-center justify-between">
+              <span>Action rapide : Remise à zéro du solde différé profil par profil &amp; accès aux tickets</span>
+              <span class="text-[11px] text-amber-700 font-semibold"><i class="fa-solid fa-calendar-day mr-1"></i>Prochaine RAZ automatique : 01/01/${new Date().getFullYear() + 1}</span>
+            </div>
+
+            ${eligibleUsers.length === 0 ? `
+              <div class="p-6 rounded-xl bg-slate-50 border border-slate-200 text-center text-xs text-slate-500">
+                Aucun compte salarié ou manager créé pour le moment. Allez dans l'onglet <strong>Gestion des Comptes</strong> pour ajouter vos collaborateurs.
+              </div>
+            ` : `
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                ${eligibleUsers.map(u => {
+                  const uTicketCount = state.tickets.filter(t => t.userId === u.id).length;
+                  return `
+                    <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3">
+                      <div>
+                        <div class="flex items-center gap-1.5">
+                          <span class="font-bold text-xs text-slate-900">${u.prenom} ${u.nom}</span>
+                          <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${u.role === 'MANAGER' ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}">${u.role === 'MANAGER' ? 'Manager' : 'Salarié'}</span>
+                        </div>
+                        <div class="text-[11px] text-slate-500">${u.rayon}</div>
+                        <div class="mt-1 font-mono font-extrabold text-sm text-indigo-700">
+                          Solde différé : ${formatEuro(u.soldeDiffere)}
+                        </div>
+                      </div>
+                      <div class="flex flex-col gap-1.5 items-end">
+                        <button onclick="resetSingleUserSoldeDiffere('${u.id}')" ${Number(u.soldeDiffere || 0) === 0 ? 'disabled' : ''} class="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold text-[11px] transition flex items-center gap-1 shadow-sm" title="Remettre le solde différé de ce profil à 0,00 €">
+                          <i class="fa-solid fa-rotate-left"></i> RAZ 0 €
+                        </button>
+                        <button onclick="inspectCollaboratorTickets('${u.id}')" class="px-2.5 py-1 rounded-lg bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold text-[11px] transition">
+                          Voir tickets (${uTicketCount}) →
+                        </button>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            `}
+          </div>
+        </div>
+
+        <!-- DEUX AUTRES GRAPHIQUES : JAUGE 50€ & TICKET MOYEN -->
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
-          <!-- Graphique 1 : Taux d'utilisation des remises par collaborateur -->
           <div class="lg:col-span-7 bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-4">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h3 class="font-bold text-base text-slate-900">Graphique du Taux d'Utilisation des Remises (Plafond 50 € / mois)</h3>
-                <p class="text-xs text-slate-500">Cliquez sur un collaborateur ci-dessous pour suivre tous ses tickets</p>
+                <p class="text-xs text-slate-500">Consommation mensuelle de la remise de 10% par collaborateur</p>
               </div>
               <span class="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-mono text-xs font-bold">Moyenne : ${(totalDiscountUsedStore / Math.max(1, eligibleUsers.length)).toFixed(2)} € / 50 €</span>
             </div>
@@ -2607,43 +2663,11 @@
             <div class="h-52 w-full pt-1">
               <canvas id="adminDiscountUtilizationChart"></canvas>
             </div>
-
-            <div class="space-y-3.5 pt-2">
-              ${eligibleUsers.map(u => {
-                const rawPct = (u.remiseUtiliseeMois / MONTHLY_CAP) * 100;
-                const pct = Math.min(100, rawPct);
-                const isOver = u.remiseUtiliseeMois > MONTHLY_CAP;
-                const nbTickets = state.tickets.filter(t => t.userId === u.id).length;
-                return `
-                  <div class="space-y-1 p-2.5 rounded-xl hover:bg-slate-50 border border-transparent hover:border-slate-200 transition">
-                    <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
-                      <div class="flex items-center gap-2">
-                        <span class="font-bold text-slate-800">${u.prenom} ${u.nom}</span>
-                        <span class="text-[11px] text-slate-400">(${u.role === 'MANAGER' ? 'Manager' : 'Salarié'} • ${u.rayon})</span>
-                        ${isOver ? `<span class="px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-bold text-[10px]">👑 Bonus Patron Génial</span>` : ''}
-                      </div>
-                      <div class="flex items-center gap-3">
-                        <button onclick="inspectCollaboratorTickets('${u.id}')" class="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline">
-                          Suivre ses tickets (${nbTickets}) →
-                        </button>
-                        <div class="font-mono font-bold ${isOver ? 'text-purple-700' : 'text-slate-900'}">
-                          ${formatEuro(u.remiseUtiliseeMois)} <span class="text-slate-400 font-normal">/ 50,00 € (${rawPct.toFixed(0)}%)</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="w-full h-3 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
-                      <div class="h-full ${isOver ? 'bg-gradient-to-r from-indigo-600 to-purple-600' : pct >= 95 ? 'bg-rose-500' : pct >= 75 ? 'bg-amber-500' : 'bg-indigo-600'} rounded-full transition-all duration-500" style="width: ${pct}%"></div>
-                    </div>
-                  </div>
-                `;
-              }).join('')}
-            </div>
           </div>
 
-          <!-- Graphique 2 : Analyse du Ticket Moyen -->
           <div class="lg:col-span-5 bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col justify-between space-y-4">
             <div>
-              <h3 class="font-bold text-base text-slate-900">Analyse du Ticket Moyen &amp; Modes (Tickets Validés)</h3>
+              <h3 class="font-bold text-base text-slate-900">Analyse du Ticket Moyen (Tickets Validés)</h3>
               <p class="text-xs text-slate-500">Montant moyen des courses avant remise par ticket validé</p>
 
               <div class="mt-4 p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
@@ -2651,23 +2675,8 @@
                   <span class="text-xs font-semibold text-slate-500 uppercase">Panier Moyen Validé</span>
                   <span class="text-2xl font-extrabold font-mono text-indigo-600">${formatEuro(averageTicket)}</span>
                 </div>
-                <div class="h-48 w-full">
+                <div class="h-44 w-full">
                   <canvas id="adminAverageTicketChart"></canvas>
-                </div>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-3 text-xs">
-              <div class="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
-                <div class="text-emerald-700 font-semibold">Tickets Directs Validés</div>
-                <div class="text-lg font-extrabold font-mono text-emerald-950 mt-0.5">
-                  ${validatedTickets.filter(t => t.typeRemise === 'DIRECT').length}
-                </div>
-              </div>
-              <div class="p-3 rounded-xl bg-indigo-50 border border-indigo-200">
-                <div class="text-indigo-700 font-semibold">Tickets Différés Validés</div>
-                <div class="text-lg font-extrabold font-mono text-indigo-950 mt-0.5">
-                  ${validatedTickets.filter(t => t.typeRemise !== 'DIRECT').length}
                 </div>
               </div>
             </div>
@@ -2677,158 +2686,78 @@
       `;
     }
 
-    // --- SOUS-VUE ADMIN 2 : SUPERVISION DES TICKETS SALARIÉ PAR SALARIÉ (MANAGERS COMPRIS) ---
+    // --- SOUS-VUE ADMIN 2 : TICKETS TRIÉS ET REGROUPÉS PAR COMPTE SALARIÉ / MANAGER ---
     function renderAdminTicketsHTML() {
-      const collaborators = state.users.filter(u => u.role !== 'ADMIN');
-      const selectedCollab = state.adminSelectedUserId !== 'ALL' ? getUserById(state.adminSelectedUserId) : null;
+      const collaborators = state.users
+        .filter(u => u.role !== 'ADMIN')
+        .sort((a, b) => `${a.nom} ${a.prenom}`.localeCompare(`${b.nom} ${b.prenom}`, 'fr'));
 
-      // Filtrage combiné : par collaborateur (salarié ou manager) ET par statut
-      const filtered = state.tickets.filter(t => {
-        if (state.adminSelectedUserId !== 'ALL' && t.userId !== state.adminSelectedUserId) {
-          return false;
-        }
+      const matchesStatusFilter = (t) => {
         if (state.adminTicketFilter === 'URGENT') {
           return t.status === 'EXPIRE_VERS_ADMIN' || t.status === 'REFUSE_PAR_MANAGER' || t.status === 'DEMANDE_SPECIALE_ADMIN';
         }
         if (state.adminTicketFilter === 'ALL') return true;
         return t.status === state.adminTicketFilter;
-      });
+      };
 
-      const baseUserTickets = state.adminSelectedUserId === 'ALL'
-        ? state.tickets
-        : state.tickets.filter(t => t.userId === state.adminSelectedUserId);
+      const countUrgent = state.tickets.filter(t => t.status === 'EXPIRE_VERS_ADMIN' || t.status === 'REFUSE_PAR_MANAGER' || t.status === 'DEMANDE_SPECIALE_ADMIN').length;
+      const countSpecial = state.tickets.filter(t => t.status === 'DEMANDE_SPECIALE_ADMIN').length;
 
-      const countUrgent = baseUserTickets.filter(t => t.status === 'EXPIRE_VERS_ADMIN' || t.status === 'REFUSE_PAR_MANAGER' || t.status === 'DEMANDE_SPECIALE_ADMIN').length;
-      const countSpecial = baseUserTickets.filter(t => t.status === 'DEMANDE_SPECIALE_ADMIN').length;
+      // Liste des collaborateurs à afficher (tous ou un seul sélectionné)
+      const visibleCollaborators = state.adminSelectedUserId === 'ALL'
+        ? collaborators
+        : collaborators.filter(u => u.id === state.adminSelectedUserId);
 
-      // Statistiques individuelles si un salarié ou manager est sélectionné
-      const collabValidatedTickets = selectedCollab
-        ? baseUserTickets.filter(t => t.status === 'VALIDE')
-        : [];
-      const collabTotalSpent = collabValidatedTickets.reduce((s, t) => s + Number(t.montantCourses || 0), 0);
-      const collabAvgTicket = collabValidatedTickets.length > 0 ? collabTotalSpent / collabValidatedTickets.length : 0;
+      // Tickets d'anciens collaborateurs supprimés
+      const orphanTickets = state.tickets.filter(
+        t => !state.users.some(u => u.id === t.userId) && matchesStatusFilter(t)
+      );
 
       return `
-        <div class="space-y-4">
+        <div class="space-y-5">
           
-          <!-- BARRE DE SÉLECTION DU COLLABORATEUR (SALARIÉ OU MANAGER) -->
+          <!-- BARRE D'OUTILS DE TRI PAR COMPTE SALARIÉ & FILTRES -->
           <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-4">
             <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div>
-                <h3 class="font-bold text-base text-slate-900 flex items-center gap-2">
-                  <i class="fa-solid fa-user-magnifying-glass text-indigo-600"></i>
-                  <span>Suivi des Tickets Salarié par Salarié (Managers compris)</span>
+                <h3 class="font-extrabold text-base text-slate-900 flex items-center gap-2">
+                  <i class="fa-solid fa-folder-tree text-indigo-600"></i>
+                  <span>Tickets Triés par Compte Salarié &amp; Manager</span>
                 </h3>
-                <p class="text-xs text-slate-500">Sélectionnez un salarié ou un manager pour inspecter l'ensemble de ses tickets, sa jauge mensuelle et son solde différé.</p>
+                <p class="text-xs text-slate-500">Chaque bloc ci-dessous regroupe un collaborateur (salarié ou manager), son solde différé et l'ensemble de ses tickets de caisse.</p>
               </div>
 
-              <!-- Menu déroulant de sélection Salarié / Manager -->
+              <!-- Sélection d'un compte salarié / manager précis -->
               <div class="flex flex-wrap items-center gap-2">
-                <select onchange="setAdminSelectedUser(this.value)" class="rounded-xl border-2 border-indigo-200 bg-indigo-50/40 px-3.5 py-2 text-xs font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none">
+                <select onchange="setAdminSelectedUser(this.value)" class="rounded-xl border-2 border-indigo-200 bg-indigo-50/50 px-3.5 py-2 text-xs font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none">
                   <option value="ALL" ${state.adminSelectedUserId === 'ALL' ? 'selected' : ''}>
-                    👥 Tous les Salariés &amp; Managers (${state.tickets.length} tickets)
+                    👥 Afficher tous les comptes salariés &amp; managers (${collaborators.length})
                   </option>
                   ${collaborators.map(u => {
                     const uTicketCount = state.tickets.filter(t => t.userId === u.id).length;
-                    const roleIcon = u.role === 'MANAGER' ? '👔 Manager' : '🪪 Salarié';
                     return `
                       <option value="${u.id}" ${state.adminSelectedUserId === u.id ? 'selected' : ''}>
-                        ${roleIcon} — ${u.prenom} ${u.nom} (${u.rayon}) • ${uTicketCount} ticket(s)
+                        ${u.role === 'MANAGER' ? '👔 Manager' : '🪪 Salarié'} — ${u.prenom} ${u.nom} (${u.rayon}) • ${uTicketCount} ticket(s)
                       </option>
                     `;
                   }).join('')}
                 </select>
 
                 ${state.adminSelectedUserId !== 'ALL' ? `
-                  <button onclick="setAdminSelectedUser('ALL')" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1">
-                    <i class="fa-solid fa-xmark"></i> Afficher tout le magasin
+                  <button onclick="setAdminSelectedUser('ALL')" class="px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold transition flex items-center gap-1">
+                    <i class="fa-solid fa-users"></i> Voir tous les comptes
                   </button>
                 ` : ''}
               </div>
             </div>
 
-            <!-- Boutons rapides par collaborateur (Pills cliquables) -->
-            ${collaborators.length > 0 ? `
-              <div class="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100">
-                <span class="text-[11px] font-bold uppercase text-slate-400 mr-1">Accès direct profil :</span>
-                <button onclick="setAdminSelectedUser('ALL')" class="px-3 py-1.5 rounded-xl text-xs font-bold transition ${state.adminSelectedUserId === 'ALL' ? 'bg-slate-900 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}">
-                  Tous (${state.tickets.length})
-                </button>
-                ${collaborators.map(u => {
-                  const uCount = state.tickets.filter(t => t.userId === u.id).length;
-                  const isSelected = state.adminSelectedUserId === u.id;
-                  return `
-                    <button onclick="setAdminSelectedUser('${u.id}')" class="px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${isSelected ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}">
-                      <i class="fa-solid ${u.role === 'MANAGER' ? 'fa-user-tie text-amber-500' : 'fa-user text-indigo-500'} ${isSelected ? '!text-white' : ''}"></i>
-                      <span>${u.prenom} ${u.nom}</span>
-                      <span class="px-1.5 py-0.2 rounded-full text-[10px] ${isSelected ? 'bg-indigo-800 text-white' : 'bg-white text-slate-600'}">${uCount}</span>
-                    </button>
-                  `;
-                }).join('')}
-              </div>
-            ` : ''}
-
-            <!-- FICHE RÉCAPITULATIVE DU COLLABORATEUR SÉLECTIONNÉ -->
-            ${selectedCollab ? `
-              <div class="p-4 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                <div class="flex items-center gap-3.5">
-                  <div class="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center font-extrabold text-base text-indigo-300 border border-white/15">
-                    ${selectedCollab.prenom[0]}${selectedCollab.nom[0]}
-                  </div>
-                  <div>
-                    <div class="flex flex-wrap items-center gap-2">
-                      <h4 class="text-base font-extrabold">${selectedCollab.prenom} ${selectedCollab.nom}</h4>
-                      <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold ${selectedCollab.role === 'MANAGER' ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30' : 'bg-indigo-400/20 text-indigo-200 border border-indigo-400/30'}">
-                        ${selectedCollab.role === 'MANAGER' ? 'MANAGER' : 'SALARIÉ'} • Rayon ${selectedCollab.rayon}
-                      </span>
-                    </div>
-                    <div class="text-xs text-slate-300 mt-0.5">
-                      ${selectedCollab.email} • ${selectedCollab.telephone}
-                    </div>
-                  </div>
-                </div>
-
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                  <div class="px-3 py-2 rounded-xl bg-white/10 border border-white/10">
-                    <div class="text-[10px] text-indigo-200 uppercase">Tickets Validés</div>
-                    <div class="font-mono font-extrabold text-sm mt-0.5">${collabValidatedTickets.length} / ${baseUserTickets.length}</div>
-                  </div>
-                  <div class="px-3 py-2 rounded-xl bg-white/10 border border-white/10">
-                    <div class="text-[10px] text-indigo-200 uppercase">Panier Moyen</div>
-                    <div class="font-mono font-extrabold text-sm mt-0.5">${formatEuro(collabAvgTicket)}</div>
-                  </div>
-                  <div class="px-3 py-2 rounded-xl bg-white/10 border border-white/10">
-                    <div class="text-[10px] text-indigo-200 uppercase">Jauge Mensuelle</div>
-                    <div class="font-mono font-extrabold text-sm mt-0.5">${formatEuro(selectedCollab.remiseUtiliseeMois)} / 50 €</div>
-                  </div>
-                  <div class="px-3 py-2 rounded-xl bg-indigo-500/30 border border-indigo-400/40 flex items-center justify-between gap-2">
-                    <div>
-                      <div class="text-[10px] text-indigo-200 uppercase">Solde Différé</div>
-                      <div class="font-mono font-extrabold text-sm text-amber-300 mt-0.5">${formatEuro(selectedCollab.soldeDiffere)}</div>
-                    </div>
-                    <button onclick="resetSingleUserSoldeDiffere('${selectedCollab.id}')" ${Number(selectedCollab.soldeDiffere || 0) === 0 ? 'disabled' : ''} class="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:bg-slate-700 disabled:text-slate-400 text-slate-950 font-extrabold text-[11px] transition whitespace-nowrap" title="Remettre le solde différé de ce collaborateur à 0,00 €">
-                      RAZ 0 €
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ` : ''}
-          </div>
-
-          <!-- LISTE DES TICKETS FILTRÉS -->
-          <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-            <div class="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h3 class="font-bold text-base text-slate-900">
-                  ${selectedCollab ? `Historique des Tickets de ${selectedCollab.prenom} ${selectedCollab.nom}` : 'Tous les Tickets du Magasin'}
-                </h3>
-                <p class="text-xs text-slate-500">Seul l'Administrateur reçoit les « Tickets Mon patron est génial » (sans manager et sans limite de 50 €), valide les tickets expirés (&gt; 10 min) ou refusés, et peut modifier les montants.</p>
-              </div>
+            <!-- Filtres par statut de ticket -->
+            <div class="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-100">
               <div class="flex flex-wrap gap-1.5">
                 ${[
-                  { id: 'ALL', label: 'Tous (' + baseUserTickets.length + ')' },
+                  { id: 'ALL', label: 'Tous les tickets (' + state.tickets.length + ')' },
                   { id: 'URGENT', label: '🚨 À traiter Admin (' + countUrgent + ')' },
-                  { id: 'DEMANDE_SPECIALE_ADMIN', label: '👑 Tickets Mon patron est génial (' + countSpecial + ')' },
+                  { id: 'DEMANDE_SPECIALE_ADMIN', label: '👑 Mon patron est génial (' + countSpecial + ')' },
                   { id: 'EN_ATTENTE_MANAGER', label: '⏱️ Chez Manager (<10m)' },
                   { id: 'VALIDE', label: '✓ Validés' },
                   { id: 'REJETE_ADMIN', label: '✕ Rejetés' }
@@ -2839,89 +2768,163 @@
                 `).join('')}
               </div>
             </div>
-
-            <div class="divide-y divide-slate-200">
-              ${filtered.length === 0 ? `
-                <div class="p-12 text-center text-slate-400 text-xs">Aucun ticket trouvé pour cette sélection.</div>
-              ` : filtered.map(ticket => {
-                const ownerInfo = getTicketOwnerDisplay(ticket);
-                const isUrgentAdmin = ticket.status === 'EXPIRE_VERS_ADMIN' || ticket.status === 'REFUSE_PAR_MANAGER' || ticket.status === 'DEMANDE_SPECIALE_ADMIN';
-
-                return `
-                  <div class="p-5 ${ticket.status === 'DEMANDE_SPECIALE_ADMIN' ? 'bg-purple-50/50' : (isUrgentAdmin ? 'bg-rose-50/40' : 'hover:bg-slate-50/80')} transition flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                    <div class="space-y-2 flex-1">
-                      <div class="flex flex-wrap items-center gap-2">
-                        <span class="font-mono font-bold text-xs px-2.5 py-1 rounded-lg bg-slate-900 text-white">${ticket.id}</span>
-                        ${getStatusBadgeHTML(ticket)}
-                        <button onclick="setAdminSelectedUser('${ticket.userId}')" class="text-xs font-bold text-indigo-700 hover:underline flex items-center gap-1" title="Filtrer uniquement sur ce collaborateur">
-                          <span>${ownerInfo.fullName}</span>
-                        </button>
-                        <span class="px-2 py-0.5 rounded text-[10px] font-bold ${ownerInfo.role === 'MANAGER' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}">${ownerInfo.role === 'MANAGER' ? 'Manager' : 'Salarié'} • ${ownerInfo.rayon}</span>
-                        ${ownerInfo.isDeleted ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 text-slate-700 border border-slate-300"><i class="fa-solid fa-user-slash mr-1"></i>Ancien collaborateur / Compte supprimé</span>` : ''}
-                        <span class="text-xs text-slate-400">• ${new Date(ticket.createdAt).toLocaleString('fr-FR')}</span>
-                      </div>
-
-                      <div class="flex flex-wrap items-center gap-4 text-xs">
-                        <div>Courses avant remise : <strong class="font-mono text-slate-900">${formatEuro(ticket.montantCourses)}</strong></div>
-                        <div>Mode : <strong class="text-slate-800">${getTypeRemiseLabel(ticket)}</strong></div>
-                        ${ticket.typeRemise === 'DIFFERE_UTILISATION'
-                          ? `<div>Décompte solde différé demandé : <strong class="font-mono text-amber-700">-${formatEuro(ticket.montantSoldeUtilise)}</strong></div>`
-                          : `<div>Remise demandée : <strong class="font-mono ${ticket.isDemandeSpeciale ? 'text-purple-700' : 'text-emerald-700'}">${formatEuro(ticket.montantRemise)} ${ticket.isDemandeSpeciale ? '(Sans limite 50 €)' : ''}</strong></div>`
-                        }
-                        ${ticket.validatedBy ? `<div class="text-emerald-700">Validé par : <strong>${ticket.validatedBy}</strong></div>` : ''}
-                      </div>
-
-                      ${ticket.justificationSalarie ? `
-                        <div class="p-3 rounded-xl bg-purple-100/80 border border-purple-300 text-xs text-purple-950">
-                          <div class="font-bold flex items-center gap-1.5 text-purple-900 mb-0.5">
-                            <i class="fa-solid fa-crown text-purple-600"></i>
-                            <span>Justification « Ticket Mon patron est génial » (Sans limite 50 € • Non visible par les managers) :</span>
-                          </div>
-                          « ${ticket.justificationSalarie} »
-                        </div>
-                      ` : ''}
-
-                      ${ticket.status === 'REFUSE_PAR_MANAGER' ? `
-                        <div class="p-3 rounded-xl bg-rose-100/80 border border-rose-300 text-xs text-rose-950">
-                          <i class="fa-solid fa-comment-medical mr-1 text-rose-700"></i>
-                          <strong>Message de refus de ${ticket.refusedBy} :</strong> « ${ticket.motifRefus} »
-                        </div>
-                      ` : ''}
-
-                      ${ticket.status === 'EXPIRE_VERS_ADMIN' ? `
-                        <div class="p-2.5 rounded-xl bg-purple-100/70 border border-purple-300 text-xs text-purple-950">
-                          <i class="fa-solid fa-clock-rotate-left mr-1"></i>
-                          <strong>Délai de 10 minutes dépassé :</strong> Aucun manager n'a validé ce ticket à temps. Les managers ont perdu l'accès ; seul vous (Admin) pouvez le valider ou modifier ses montants.
-                        </div>
-                      ` : ''}
-
-                      ${ticket.adminNote ? `
-                        <div class="text-xs text-indigo-700 font-medium">
-                          <i class="fa-solid fa-pen-clip mr-1"></i>Note Admin : ${ticket.adminNote}
-                        </div>
-                      ` : ''}
-                    </div>
-
-                    <div class="flex flex-wrap items-center gap-2">
-                      <button onclick="openReceiptModal('${ticket.id}')" class="px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-bold flex items-center gap-1.5 shadow-sm">
-                        <i class="fa-solid fa-eye text-indigo-600"></i> Photo Ticket
-                      </button>
-
-                      ${ticket.status !== 'VALIDE' && ticket.status !== 'REJETE_ADMIN' ? `
-                        <button onclick="openAdminEditModal('${ticket.id}')" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm">
-                          <i class="fa-solid fa-sliders"></i> Modifier montants / Arbitrer
-                        </button>
-                        <button onclick="adminDirectValidate('${ticket.id}')" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm">
-                          <i class="fa-solid fa-check"></i> Valider tel quel
-                        </button>
-                      ` : ''}
-                    </div>
-                  </div>
-                `;
-              }).join('')}
-            </div>
           </div>
 
+          <!-- BLOCS DES TICKETS TRIÉS COMPTE PAR COMPTE -->
+          ${visibleCollaborators.length === 0 ? `
+            <div class="bg-white rounded-2xl p-12 text-center border border-slate-200 text-xs text-slate-500">
+              Aucun compte salarié ou manager n'a encore été créé. Rendez-vous dans l'onglet <strong>Gestion des Comptes</strong>.
+            </div>
+          ` : visibleCollaborators.map(u => {
+            const userTickets = state.tickets
+              .filter(t => t.userId === u.id && matchesStatusFilter(t))
+              .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+            const allUserTicketsCount = state.tickets.filter(t => t.userId === u.id).length;
+            const validatedUserTickets = state.tickets.filter(t => t.userId === u.id && t.status === 'VALIDE');
+            const totalCAUser = validatedUserTickets.reduce((s, t) => s + Number(t.montantCourses || 0), 0);
+
+            return `
+              <div class="bg-white rounded-2xl shadow-sm border-2 border-slate-200 overflow-hidden">
+                <!-- EN-TÊTE DU COMPTE SALARIÉ / MANAGER -->
+                <div class="px-5 py-4 bg-slate-900 text-white flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  <div class="flex items-center gap-3.5">
+                    <div class="w-11 h-11 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-extrabold text-sm shadow">
+                      ${u.prenom[0]}${u.nom[0]}
+                    </div>
+                    <div>
+                      <div class="flex flex-wrap items-center gap-2">
+                        <h4 class="font-extrabold text-base text-white">${u.prenom} ${u.nom}</h4>
+                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold ${u.role === 'MANAGER' ? 'bg-amber-400 text-slate-950' : 'bg-indigo-500/30 text-indigo-200 border border-indigo-400/30'}">
+                          ${u.role === 'MANAGER' ? '👔 MANAGER' : '🪪 SALARIÉ'} • Rayon ${u.rayon}
+                        </span>
+                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/10 text-slate-200">
+                          ${allUserTicketsCount} ticket(s) au total
+                        </span>
+                      </div>
+                      <div class="text-xs text-slate-400 mt-0.5">
+                        ${u.email} • ${u.telephone} • CA Validé : <strong class="text-slate-200 font-mono">${formatEuro(totalCAUser)}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Jauge 50 € + Solde différé + Bouton RAZ Solde Différé de ce profil -->
+                  <div class="flex flex-wrap items-center gap-3">
+                    <div class="px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-xs">
+                      <span class="text-slate-400 block text-[10px] uppercase">Jauge Mensuelle</span>
+                      <span class="font-mono font-bold text-white">${formatEuro(u.remiseUtiliseeMois)} / 50,00 €</span>
+                    </div>
+
+                    <div class="px-3 py-1.5 rounded-xl bg-indigo-950 border border-indigo-700 flex items-center gap-3">
+                      <div>
+                        <span class="text-indigo-300 block text-[10px] uppercase">Solde Différé</span>
+                        <span class="font-mono font-extrabold text-amber-300 text-sm">${formatEuro(u.soldeDiffere)}</span>
+                      </div>
+                      <button onclick="resetSingleUserSoldeDiffere('${u.id}')" ${Number(u.soldeDiffere || 0) === 0 ? 'disabled' : ''} class="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:bg-slate-700 disabled:text-slate-500 text-slate-950 font-extrabold text-[11px] transition flex items-center gap-1" title="Remettre le solde différé de ${u.prenom} ${u.nom} à 0,00 €">
+                        <i class="fa-solid fa-rotate-left"></i> RAZ 0 €
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- LISTE DES TICKETS APPARTENANT À CE COMPTE SALARIÉ -->
+                <div class="divide-y divide-slate-200">
+                  ${userTickets.length === 0 ? `
+                    <div class="p-6 text-center text-xs text-slate-400 bg-slate-50/50">
+                      Aucun ticket pour <strong>${u.prenom} ${u.nom}</strong> dans ce filtre.
+                    </div>
+                  ` : userTickets.map(ticket => renderAdminTicketRowHTML(ticket)).join('')}
+                </div>
+              </div>
+            `;
+          }).join('')}
+
+          <!-- Section pour les tickets d'anciens comptes supprimés (si présents) -->
+          ${orphanTickets.length > 0 && state.adminSelectedUserId === 'ALL' ? `
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-300 overflow-hidden">
+              <div class="px-5 py-3 bg-slate-200 text-slate-800 font-bold text-xs flex items-center justify-between">
+                <span><i class="fa-solid fa-user-slash mr-1.5"></i>Tickets d'anciens collaborateurs (Comptes supprimés)</span>
+                <span>${orphanTickets.length} ticket(s)</span>
+              </div>
+              <div class="divide-y divide-slate-200">
+                ${orphanTickets.map(ticket => renderAdminTicketRowHTML(ticket)).join('')}
+              </div>
+            </div>
+          ` : ''}
+
+        </div>
+      `;
+    }
+
+    function renderAdminTicketRowHTML(ticket) {
+      const ownerInfo = getTicketOwnerDisplay(ticket);
+      const isUrgentAdmin = ticket.status === 'EXPIRE_VERS_ADMIN' || ticket.status === 'REFUSE_PAR_MANAGER' || ticket.status === 'DEMANDE_SPECIALE_ADMIN';
+
+      return `
+        <div class="p-5 ${ticket.status === 'DEMANDE_SPECIALE_ADMIN' ? 'bg-purple-50/50' : (isUrgentAdmin ? 'bg-rose-50/40' : 'hover:bg-slate-50/80')} transition flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div class="space-y-2 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="font-mono font-bold text-xs px-2.5 py-1 rounded-lg bg-slate-900 text-white">${ticket.id}</span>
+              ${getStatusBadgeHTML(ticket)}
+              <span class="text-xs font-bold text-slate-800">${ownerInfo.fullName}</span>
+              <span class="text-xs text-slate-400">• Soumis le ${new Date(ticket.createdAt).toLocaleString('fr-FR')}</span>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-4 text-xs">
+              <div>Courses avant remise : <strong class="font-mono text-slate-900">${formatEuro(ticket.montantCourses)}</strong></div>
+              <div>Mode : <strong class="text-slate-800">${getTypeRemiseLabel(ticket)}</strong></div>
+              ${ticket.typeRemise === 'DIFFERE_UTILISATION'
+                ? `<div>Décompte solde différé demandé : <strong class="font-mono text-amber-700">-${formatEuro(ticket.montantSoldeUtilise)}</strong></div>`
+                : `<div>Remise demandée : <strong class="font-mono ${ticket.isDemandeSpeciale ? 'text-purple-700' : 'text-emerald-700'}">${formatEuro(ticket.montantRemise)} ${ticket.isDemandeSpeciale ? '(Sans limite 50 €)' : ''}</strong></div>`
+              }
+              ${ticket.validatedBy ? `<div class="text-emerald-700">Validé par : <strong>${ticket.validatedBy}</strong></div>` : ''}
+            </div>
+
+            ${ticket.justificationSalarie ? `
+              <div class="p-3 rounded-xl bg-purple-100/80 border border-purple-300 text-xs text-purple-950">
+                <div class="font-bold flex items-center gap-1.5 text-purple-900 mb-0.5">
+                  <i class="fa-solid fa-crown text-purple-600"></i>
+                  <span>Justification « Ticket Mon patron est génial » :</span>
+                </div>
+                « ${ticket.justificationSalarie} »
+              </div>
+            ` : ''}
+
+            ${ticket.status === 'REFUSE_PAR_MANAGER' ? `
+              <div class="p-3 rounded-xl bg-rose-100/80 border border-rose-300 text-xs text-rose-950">
+                <i class="fa-solid fa-comment-medical mr-1 text-rose-700"></i>
+                <strong>Message de refus de ${ticket.refusedBy} :</strong> « ${ticket.motifRefus} »
+              </div>
+            ` : ''}
+
+            ${ticket.status === 'EXPIRE_VERS_ADMIN' ? `
+              <div class="p-2.5 rounded-xl bg-purple-100/70 border border-purple-300 text-xs text-purple-950">
+                <i class="fa-solid fa-clock-rotate-left mr-1"></i>
+                <strong>Délai de 10 minutes dépassé :</strong> Transféré automatiquement à l'Administrateur.
+              </div>
+            ` : ''}
+
+            ${ticket.adminNote ? `
+              <div class="text-xs text-indigo-700 font-medium">
+                <i class="fa-solid fa-pen-clip mr-1"></i>Note Admin : ${ticket.adminNote}
+              </div>
+            ` : ''}
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="openReceiptModal('${ticket.id}')" class="px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-bold flex items-center gap-1.5 shadow-sm">
+              <i class="fa-solid fa-eye text-indigo-600"></i> Photo Ticket
+            </button>
+
+            ${ticket.status !== 'VALIDE' && ticket.status !== 'REJETE_ADMIN' ? `
+              <button onclick="openAdminEditModal('${ticket.id}')" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm">
+                <i class="fa-solid fa-sliders"></i> Modifier montants / Arbitrer
+              </button>
+              <button onclick="adminDirectValidate('${ticket.id}')" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm">
+                <i class="fa-solid fa-check"></i> Valider tel quel
+              </button>
+            ` : ''}
+          </div>
         </div>
       `;
     }
@@ -2956,10 +2959,8 @@
       banner.innerHTML = `
         <div class="flex items-center justify-between">
           <span>Collaborateur : <strong>${emp ? emp.prenom + ' ' + emp.nom : ''}</strong> (${emp ? emp.rayon : ''})</span>
-          <span>Jauge actuelle : <strong>${emp ? formatEuro(emp.remiseUtiliseeMois) : '0 €'} / 50 €</strong> • Solde différé : <strong>${emp ? formatEuro(emp.soldeDiffere) : '0 €'}</strong></span>
+          <span>Jauge : <strong>${emp ? formatEuro(emp.remiseUtiliseeMois) : '0 €'} / 50 €</strong> • Solde différé : <strong>${emp ? formatEuro(emp.soldeDiffere) : '0 €'}</strong></span>
         </div>
-        ${ticket.justificationSalarie ? `<div class="mt-1.5 p-2 rounded-lg bg-purple-100 text-purple-950 font-semibold"><i class="fa-solid fa-crown mr-1 text-purple-700"></i>Ticket Mon patron est génial (Sans limite 50 €) : « ${ticket.justificationSalarie} »</div>` : ''}
-        ${ticket.motifRefus ? `<div class="mt-1.5 text-rose-700 font-semibold">Motif du refus Manager : « ${ticket.motifRefus} »</div>` : ''}
       `;
 
       recalcAdminEditPreview();
@@ -2993,9 +2994,9 @@
       const type = document.getElementById('adminEditTypeRemise').value;
 
       document.getElementById('adminEditCapHelper').textContent = ticket.isDemandeSpeciale
-        ? `👑 Ticket Mon patron est génial : aucune limite de 50 € (cumul actuel : ${formatEuro(emp.remiseUtiliseeMois)})`
+        ? `👑 Ticket Mon patron est génial : aucune limite de 50 €`
         : `Reliquat mensuel avant plafond de 50 € : ${formatEuro(remainingCap)}`;
-      document.getElementById('adminEditSoldeHelper').textContent = `Solde différé disponible du collaborateur : ${formatEuro(emp.soldeDiffere)}`;
+      document.getElementById('adminEditSoldeHelper').textContent = `Solde différé disponible : ${formatEuro(emp.soldeDiffere)}`;
 
       const soldeBox = document.getElementById('adminEditSoldeBox');
       soldeBox.classList.toggle('opacity-50', type !== 'DIFFERE_UTILISATION');
@@ -3024,7 +3025,7 @@
       }
 
       if (newType === 'DIFFERE_UTILISATION' && emp && newSoldeUtilise > emp.soldeDiffere) {
-        showToast(`Le décompte du solde différé ne peut pas dépasser le solde du salarié (${formatEuro(emp.soldeDiffere)}).`, 'error');
+        showToast(`Le décompte ne peut pas dépasser le solde du salarié (${formatEuro(emp.soldeDiffere)}).`, 'error');
         return;
       }
 
@@ -3032,14 +3033,14 @@
       ticket.typeRemise = newType;
       ticket.montantRemise = Number(newRemise.toFixed(2));
       ticket.montantSoldeUtilise = newType === 'DIFFERE_UTILISATION' ? Number(newSoldeUtilise.toFixed(2)) : 0;
-      ticket.adminNote = note || 'Montants vérifiés/modifiés et validés par l’Administrateur.';
+      ticket.adminNote = note || 'Montants vérifiés et validés par l’Administrateur.';
       ticket.status = 'VALIDE';
       ticket.validatedBy = 'Administrateur (Après révision)';
 
       applyTicketFinancialImpact(ticket);
       closeAdminEditModal();
       saveStateToStorage();
-      showToast(`Ticket <strong>${ticket.id}</strong> modifié et validé par l'Administrateur !`, 'success');
+      showToast(`Ticket <strong>${ticket.id}</strong> modifié et validé !`, 'success');
       renderApp();
     }
 
@@ -3053,17 +3054,16 @@
       ticket.adminNote = note || 'Ticket rejeté définitivement par l’Administrateur.';
       closeAdminEditModal();
       syncTicketToCloud(ticket);
-      showToast(`Ticket <strong>${ticket.id}</strong> rejeté définitivement. Aucun montant n'a été comptabilisé.`, 'warning');
+      showToast(`Ticket <strong>${ticket.id}</strong> rejeté définitivement.`, 'warning');
       renderApp();
     }
 
-    // --- SOUS-VUE ADMIN 3 : GESTION DES COMPTES, RAZ SOLDE DIFFÉRÉ PROFIL PAR PROFIL & SUIVI ---
+    // --- SOUS-VUE ADMIN 3 : GESTION DES COMPTES, RAZ SOLDE DIFFÉRÉ PROFIL PAR PROFIL ---
     function renderAdminUsersHTML() {
       const nextJan1stYear = new Date().getFullYear() + 1;
       return `
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
-          <!-- Formulaire de création d'un nouveau compte -->
           <div class="lg:col-span-4 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-fit">
             <div class="px-5 py-4 bg-slate-900 text-white flex items-center gap-2">
               <i class="fa-solid fa-user-plus text-indigo-400"></i>
@@ -3084,7 +3084,7 @@
 
               <div>
                 <label class="block text-xs font-bold text-slate-700 mb-1">Rayon d'affectation *</label>
-                <input type="text" id="newUserRayon" required placeholder="Ex: Boucherie, Charcuterie, Caisses..." class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none" />
+                <input type="text" id="newUserRayon" required placeholder="Ex: Boucherie, Caisses..." class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none" />
               </div>
 
               <div>
@@ -3125,17 +3125,16 @@
               </div>
 
               <button type="submit" class="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm transition flex items-center justify-center gap-2 mt-2">
-                <i class="fa-solid fa-check"></i> Créer le compte &amp; Enregistrer les identifiants
+                <i class="fa-solid fa-check"></i> Créer le compte &amp; Enregistrer
               </button>
             </form>
           </div>
 
-          <!-- Tableau de visualisation des informations de tous les comptes -->
           <div class="lg:col-span-8 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
             <div class="px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h3 class="font-bold text-base text-slate-900">Répertoire des Comptes &amp; Gestion des Soldes Différés</h3>
-                <p class="text-xs text-slate-500">Remise à zéro automatique des soldes différés le <strong>01/01/${nextJan1stYear}</strong> ou remise à zéro manuelle <strong>profil par profil</strong>.</p>
+                <h3 class="font-bold text-base text-slate-900">Répertoire des Comptes &amp; Remise à zéro du Solde Différé</h3>
+                <p class="text-xs text-slate-500">RAZ automatique le <strong>01/01/${nextJan1stYear}</strong> ou remise à zéro manuelle <strong>profil par profil</strong> via le bouton <span class="font-bold text-amber-700">RAZ 0 €</span>.</p>
               </div>
               <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700">${state.users.length} compte(s)</span>
             </div>
@@ -3183,7 +3182,7 @@
                             <span class="${isPwdVisible ? 'text-indigo-700 font-bold bg-indigo-50 px-1.5 py-0.5 rounded' : 'text-slate-400'}">
                               ${isPwdVisible ? u.motDePasse : '••••••••'}
                             </span>
-                            <button type="button" onclick="toggleAdminTablePassword('${u.id}')" class="text-slate-400 hover:text-indigo-600" title="Afficher / Masquer le mot de passe">
+                            <button type="button" onclick="toggleAdminTablePassword('${u.id}')" class="text-slate-400 hover:text-indigo-600">
                               <i class="fa-regular ${isPwdVisible ? 'fa-eye-slash' : 'fa-eye'}"></i>
                             </button>
                           </div>
@@ -3192,7 +3191,6 @@
                         <td class="py-3.5 px-4">
                           ${isMainAdmin ? '<span class="text-slate-400">—</span>' : `
                             <div class="font-mono font-bold ${isOverCap ? 'text-purple-700' : 'text-slate-900'}">${formatEuro(u.remiseUtiliseeMois)} <span class="text-slate-400 font-normal">/ 50 €</span></div>
-                            ${isOverCap ? `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-bold text-[9px]">👑 Bonus Patron Génial</span>` : ''}
                             <div class="w-24 h-1.5 bg-slate-200 rounded-full overflow-hidden mt-1">
                               <div class="h-full ${isOverCap ? 'bg-purple-600' : 'bg-indigo-600'}" style="width: ${pct}%"></div>
                             </div>
@@ -3202,7 +3200,7 @@
                           ${isMainAdmin ? '<span class="text-slate-400">—</span>' : `
                             <div class="flex items-center gap-2">
                               <span class="font-mono font-bold text-sm text-indigo-700">${formatEuro(u.soldeDiffere)}</span>
-                              <button onclick="resetSingleUserSoldeDiffere('${u.id}')" ${Number(u.soldeDiffere || 0) === 0 ? 'disabled' : ''} title="Remettre le solde différé de ${u.prenom} ${u.nom} à 0,00 €" class="px-2 py-1 rounded-lg bg-amber-100 hover:bg-amber-500 text-amber-900 hover:text-white disabled:bg-slate-100 disabled:text-slate-300 disabled:cursor-not-allowed font-bold text-[10px] border border-amber-300 disabled:border-slate-200 transition flex items-center gap-1">
+                              <button onclick="resetSingleUserSoldeDiffere('${u.id}')" ${Number(u.soldeDiffere || 0) === 0 ? 'disabled' : ''} class="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white disabled:bg-slate-100 disabled:text-slate-300 font-bold text-[10px] transition flex items-center gap-1 shadow-sm">
                                 <i class="fa-solid fa-rotate-left"></i> RAZ 0 €
                               </button>
                             </div>
@@ -3211,19 +3209,19 @@
                         <td class="py-3.5 px-4 text-right">
                           <div class="flex items-center justify-end gap-1.5">
                             ${!isMainAdmin ? `
-                              <button onclick="inspectCollaboratorTickets('${u.id}')" title="Suivre tous les tickets de ${u.prenom} ${u.nom}" class="px-2.5 h-8 rounded-lg bg-slate-900 hover:bg-indigo-600 text-white text-[11px] font-bold flex items-center gap-1.5 transition">
+                              <button onclick="inspectCollaboratorTickets('${u.id}')" class="px-2.5 h-8 rounded-lg bg-slate-900 hover:bg-indigo-600 text-white text-[11px] font-bold flex items-center gap-1.5 transition">
                                 <i class="fa-solid fa-receipt"></i> Tickets (${userTicketCount})
                               </button>
                             ` : ''}
-                            <button onclick="openEditUserModal('${u.id}')" title="Modifier les informations & le mot de passe" class="w-8 h-8 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 flex items-center justify-center transition">
+                            <button onclick="openEditUserModal('${u.id}')" class="w-8 h-8 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 flex items-center justify-center transition">
                               <i class="fa-solid fa-pen"></i>
                             </button>
                             ${isMainAdmin ? `
-                              <button disabled title="Le compte Administrateur principal ne peut pas être supprimé" class="w-8 h-8 rounded-lg bg-slate-100 text-slate-300 border border-slate-200 flex items-center justify-center cursor-not-allowed">
+                              <button disabled class="w-8 h-8 rounded-lg bg-slate-100 text-slate-300 border border-slate-200 flex items-center justify-center cursor-not-allowed">
                                 <i class="fa-solid fa-trash-can"></i>
                               </button>
                             ` : `
-                              <button onclick="openDeleteUserModal('${u.id}')" title="Supprimer ce compte" class="w-8 h-8 rounded-lg bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white border border-rose-200 flex items-center justify-center transition">
+                              <button onclick="openDeleteUserModal('${u.id}')" class="w-8 h-8 rounded-lg bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white border border-rose-200 flex items-center justify-center transition">
                                 <i class="fa-solid fa-trash-can"></i>
                               </button>
                             `}
@@ -3298,7 +3296,7 @@
         u => u.id !== userId && u.email.trim().toLowerCase() === newEmail.toLowerCase()
       );
       if (emailDuplicate) {
-        showToast(`Cette adresse e-mail (${newEmail}) est déjà utilisée par un autre compte.`, 'error');
+        showToast(`Cette adresse e-mail (${newEmail}) est déjà utilisée.`, 'error');
         return;
       }
 
@@ -3319,31 +3317,25 @@
 
       closeEditUserModal();
       syncUserToCloud(user);
-      showToast(`Les informations et identifiants de <strong>${user.prenom} ${user.nom}</strong> ont été mis à jour.`, 'success');
+      showToast(`Profil de <strong>${user.prenom} ${user.nom}</strong> mis à jour.`, 'success');
       renderApp();
     }
 
     function openDeleteUserModal(userId) {
       const user = getUserById(userId);
-      if (!user) return;
-
-      if (user.role === 'ADMIN') {
-        showToast('Impossible de supprimer le compte Administrateur principal.', 'error');
-        return;
-      }
+      if (!user || user.role === 'ADMIN') return;
 
       document.getElementById('deleteUserIdInput').value = user.id;
       const userTickets = state.tickets.filter(t => t.userId === user.id);
       const validatedCount = userTickets.filter(t => t.status === 'VALIDE').length;
-      const pendingCount = userTickets.length - validatedCount;
 
       document.getElementById('deleteUserSummaryBox').innerHTML = `
-        <div class="font-bold text-sm text-slate-900">${user.prenom} ${user.nom} <span class="text-xs font-semibold text-indigo-700">(${user.role} • ${user.rayon})</span></div>
+        <div class="font-bold text-sm text-slate-900">${user.prenom} ${user.nom} (${user.role} • ${user.rayon})</div>
         <div class="text-slate-500">${user.email} • ${user.telephone}</div>
         <div class="pt-1.5 mt-1.5 border-t border-slate-200 flex flex-wrap gap-3 font-medium text-slate-700">
           <span>Jauge mois : <strong>${formatEuro(user.remiseUtiliseeMois)}</strong></span>
           <span>Solde différé : <strong>${formatEuro(user.soldeDiffere)}</strong></span>
-          <span>Tickets : <strong>${validatedCount} validé(s)</strong>${pendingCount > 0 ? `, ${pendingCount} en cours` : ''}</span>
+          <span>Tickets validés : <strong>${validatedCount}</strong></span>
         </div>
       `;
 
@@ -3392,16 +3384,8 @@
         state.adminSelectedUserId = 'ALL';
       }
 
-      if (state.currentUserId === userId) {
-        const adminAccount = state.users.find(u => u.role === 'ADMIN') || state.users[0];
-        state.currentUserId = adminAccount.id;
-      }
-
       closeDeleteUserModal();
-      showToast(
-        `Le compte de <strong>${deletedFullName}</strong> (${deletedRayon}) a été supprimé avec succès.`,
-        'warning'
-      );
+      showToast(`Le compte de <strong>${deletedFullName}</strong> a été supprimé.`, 'warning');
       renderApp();
     }
 
@@ -3438,10 +3422,7 @@
 
       state.users.push(newUser);
       syncUserToCloud(newUser);
-      showToast(
-        `Compte créé avec succès pour <strong>${prenom} ${nom}</strong> (${role}). Il peut désormais se connecter avec <strong>${email}</strong> et son mot de passe.`,
-        'success'
-      );
+      showToast(`Compte créé avec succès pour <strong>${prenom} ${nom}</strong> (${role}).`, 'success');
       renderApp();
     }
 
@@ -3450,7 +3431,7 @@
         u.remiseUtiliseeMois = 0.00;
         syncUserToCloud(u);
       });
-      showToast('Nouveau cycle mensuel initialisé : toutes les jauges de 50 € ont été remises à 0,00 € (les soldes différés cumulés sont conservés).', 'success');
+      showToast('Nouveau cycle mensuel initialisé : toutes les jauges de 50 € ont été remises à 0,00 €.', 'success');
       renderApp();
     }
 
@@ -3467,7 +3448,6 @@
         <div class="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-slate-100 border border-slate-200 text-xs">
           <div>
             Collaborateur : <strong>${ownerInfo.fullName}</strong> (${ownerInfo.rayon})
-            ${ownerInfo.isDeleted ? `<span class="ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 text-slate-700">Compte supprimé</span>` : ''}
           </div>
           <div>${getStatusBadgeHTML(ticket)}</div>
         </div>
@@ -3490,13 +3470,6 @@
             <span class="font-mono font-bold text-amber-700">${formatEuro(ticket.montantSoldeUtilise)}</span>
           </div>
         </div>
-
-        ${ticket.justificationSalarie ? `
-          <div class="p-3 rounded-xl bg-purple-50 border border-purple-200 text-xs text-purple-950">
-            <div class="font-bold text-purple-900 mb-0.5"><i class="fa-solid fa-crown mr-1 text-purple-600"></i>Justification « Ticket Mon patron est génial » (Sans limite 50 € • Sans Manager) :</div>
-            « ${ticket.justificationSalarie} »
-          </div>
-        ` : ''}
       `;
       document.getElementById('receiptModal').classList.remove('hidden');
     }
@@ -3506,7 +3479,7 @@
     }
 
     /*************************************************************************
-     * 13. RENDU GLOBAL DE L'APPLICATION SELON L'ÉTAT D'AUTHENTIFICATION
+     * 13. RENDU GLOBAL DE L'APPLICATION
      *************************************************************************/
     function renderApp() {
       const user = getCurrentUser();
@@ -3587,6 +3560,7 @@
       setAdminTab,
       setAdminTicketFilter,
       setAdminSelectedUser,
+      setAdminGroupingMode,
       inspectCollaboratorTickets,
       resetSingleUserSoldeDiffere,
       resetAllDeferredBalancesAnnual,
