@@ -279,20 +279,14 @@
 
         <div class="space-y-2">
           <label class="block text-xs font-bold text-slate-600">Historique des tickets :</label>
-          <label class="flex items-start gap-2.5 p-2.5 rounded-xl border-2 border-slate-200 has-[:checked]:border-indigo-600 has-[:checked]:bg-indigo-50/50 cursor-pointer">
-            <input type="radio" name="deleteTicketStrategy" value="KEEP_VALIDATED" checked class="mt-0.5 text-indigo-600">
-            <div class="text-xs">
-              <div class="font-bold text-slate-900">Conserver les tickets validés</div>
-              <p class="text-[11px] text-slate-500">Maintient les statistiques magasin (« Ancien collaborateur »).</p>
-            </div>
+          <label class="flex items-center gap-2.5 p-3 rounded-xl border-2 border-slate-200 has-[:checked]:border-indigo-600 has-[:checked]:bg-indigo-50/50 cursor-pointer">
+            <input type="radio" name="deleteTicketStrategy" value="KEEP_VALIDATED" checked class="text-indigo-600">
+            <span class="text-xs font-bold text-slate-900">Conserver les tickets validés</span>
           </label>
 
-          <label class="flex items-start gap-2.5 p-2.5 rounded-xl border-2 border-slate-200 has-[:checked]:border-rose-600 has-[:checked]:bg-rose-50/50 cursor-pointer">
-            <input type="radio" name="deleteTicketStrategy" value="DELETE_ALL" class="mt-0.5 text-rose-600">
-            <div class="text-xs">
-              <div class="font-bold text-rose-900">Tout supprimer</div>
-              <p class="text-[11px] text-slate-500">Efface le compte et tous ses tickets.</p>
-            </div>
+          <label class="flex items-center gap-2.5 p-3 rounded-xl border-2 border-slate-200 has-[:checked]:border-rose-600 has-[:checked]:bg-rose-50/50 cursor-pointer">
+            <input type="radio" name="deleteTicketStrategy" value="DELETE_ALL" class="text-rose-600">
+            <span class="text-xs font-bold text-rose-900">Tout supprimer</span>
           </label>
         </div>
 
@@ -1025,10 +1019,6 @@
         .filter(t => t.userId === user.id)
         .sort((a, b) => b.createdAt - a.createdAt);
 
-      const usedDeferredTotal = userTickets
-        .filter(t => t.status === 'VALIDE' && t.typeRemise === 'DIFFERE_UTILISATION')
-        .reduce((sum, t) => sum + Number(t.montantSoldeUtilise || 0), 0);
-
       const isManager = user.role === 'MANAGER';
 
       return `
@@ -1057,7 +1047,7 @@
                 <h2 class="text-sm font-bold text-slate-900">Plafond Mensuel (10%)</h2>
                 ${isOverCap ? `
                   <span class="px-2.5 py-0.5 rounded-lg text-xs font-bold bg-purple-100 text-purple-900">
-                    👑 +${formatEuro(user.remiseUtiliseeMois - MONTHLY_CAP)} hors plafond
+                    👑 +${formatEuro(user.remiseUtiliseeMois - MONTHLY_CAP)}
                   </span>
                 ` : `
                   <span class="px-2.5 py-0.5 rounded-lg text-xs font-bold ${remainingCap === 0 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-800'}">
@@ -1070,77 +1060,59 @@
                 <div class="h-full ${isOverCap ? 'bg-purple-600' : pctUsed >= 100 ? 'bg-rose-600' : pctUsed >= 80 ? 'bg-amber-500' : 'bg-indigo-600'} transition-all duration-500" style="width: ${pctUsed}%"></div>
               </div>
 
-              <div class="grid grid-cols-3 gap-2 pt-1">
-                <div class="p-2 rounded-xl bg-slate-50 border border-slate-200/80">
+              <div class="grid grid-cols-2 gap-2 pt-1">
+                <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
                   <div class="text-[10px] text-slate-400 uppercase font-semibold">Consommé</div>
                   <div class="text-xs font-bold font-mono text-slate-900">${formatEuro(user.remiseUtiliseeMois)}</div>
                 </div>
-                <div class="p-2 rounded-xl bg-slate-50 border border-slate-200/80">
+                <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
                   <div class="text-[10px] text-slate-400 uppercase font-semibold">Restant</div>
                   <div class="text-xs font-bold font-mono text-emerald-700">${formatEuro(remainingCap)}</div>
-                </div>
-                <div class="p-2 rounded-xl bg-slate-50 border border-slate-200/80">
-                  <div class="text-[10px] text-slate-400 uppercase font-semibold">Hors plafond</div>
-                  <div class="text-[11px] font-bold text-purple-700">👑 Patron génial</div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Cagnotte Différée -->
-          <div class="bg-gradient-to-br from-indigo-900 to-slate-900 text-white rounded-2xl p-5 shadow-sm flex flex-col justify-between">
-            <div>
-              <div class="flex items-center justify-between">
-                <span class="text-[11px] uppercase tracking-wider font-semibold text-indigo-300">Solde Différé (${new Date().getFullYear()})</span>
-                <i class="fa-solid fa-piggy-bank text-indigo-300"></i>
-              </div>
-              <div class="text-2xl font-extrabold font-mono mt-2">${formatEuro(user.soldeDiffere)}</div>
-              <div class="text-xs text-indigo-200 mt-1">Déjà utilisé : <strong class="font-mono text-white">${formatEuro(usedDeferredTotal)}</strong></div>
+          <!-- Cagnotte Différée Épurée (sans définition sous le solde) -->
+          <div class="bg-gradient-to-br from-indigo-900 to-slate-900 text-white rounded-2xl p-6 shadow-sm flex flex-col justify-center">
+            <div class="flex items-center justify-between">
+              <span class="text-xs uppercase tracking-wider font-bold text-indigo-300">Mon Solde du Différé</span>
+              <span class="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-indigo-200">
+                <i class="fa-solid fa-piggy-bank"></i>
+              </span>
             </div>
-            <div class="mt-3 pt-2.5 border-t border-white/15 flex items-center justify-between text-[11px] text-indigo-200">
-              <span><i class="fa-solid fa-calendar-day mr-1 text-amber-300"></i>RAZ auto le 1er janvier</span>
-              <i class="fa-solid fa-bolt text-amber-400"></i>
-            </div>
+            <div class="text-3xl font-extrabold font-mono mt-3 text-white">${formatEuro(user.soldeDiffere)}</div>
           </div>
         </div>
 
         <!-- Formulaire & Historique -->
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
           <div class="lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-            <div class="px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <i class="fa-solid fa-camera text-indigo-400"></i>
-                <h3 class="font-bold text-sm">Nouveau Ticket</h3>
-              </div>
-              <span id="formHeaderCircuitBadge" class="text-[11px] px-2.5 py-0.5 rounded-full ${isManager ? 'bg-amber-500/20 text-amber-300' : 'bg-indigo-500/20 text-indigo-300'} font-semibold">
-                ${isManager ? '⚡ Auto-validation' : '⏱️ Validation 10 min'}
-              </span>
+            <div class="px-5 py-3.5 bg-slate-900 text-white flex items-center gap-2">
+              <i class="fa-solid fa-camera text-indigo-400"></i>
+              <h3 class="font-bold text-sm">Soumettre mon ticket</h3>
             </div>
 
             <form id="ticketSubmissionForm" onsubmit="handleTicketSubmit(event)" class="p-5 space-y-4">
-              <!-- Circuit -->
+              <!-- Type de ticket (sans explications sous les boutons) -->
               <div>
-                <label class="block text-xs font-bold text-slate-600 mb-1.5">Circuit de validation</label>
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">Type de ticket</label>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <label class="cursor-pointer">
                     <input type="radio" name="circuitValidation" value="STANDARD" checked onchange="updateTicketFormCalculations()" class="peer sr-only" />
-                    <div class="p-3 rounded-xl border-2 border-slate-200 peer-checked:border-indigo-600 peer-checked:bg-indigo-50/60 hover:bg-slate-50 transition">
-                      <div class="flex items-center justify-between">
-                        <span class="text-xs font-bold text-slate-900"><i class="fa-solid fa-stopwatch text-indigo-600 mr-1"></i>Standard</span>
-                        <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800">Max 50 €</span>
-                      </div>
-                      <p class="text-[11px] text-slate-500 mt-0.5">${isManager ? 'Auto-validé (10%)' : 'Manager sous 10 min'}</p>
+                    <div class="p-3.5 rounded-xl border-2 border-slate-200 peer-checked:border-indigo-600 peer-checked:bg-indigo-50/60 hover:bg-slate-50 transition flex items-center justify-between">
+                      <span class="text-xs font-bold text-slate-900 flex items-center gap-2">
+                        <i class="fa-solid fa-receipt text-indigo-600"></i> Ticket Normal
+                      </span>
                     </div>
                   </label>
 
                   <label class="cursor-pointer">
                     <input type="radio" name="circuitValidation" value="SPECIALE_ADMIN" onchange="updateTicketFormCalculations()" class="peer sr-only" />
-                    <div class="p-3 rounded-xl border-2 border-slate-200 peer-checked:border-purple-600 peer-checked:bg-purple-50/70 hover:bg-slate-50 transition">
-                      <div class="flex items-center justify-between">
-                        <span class="text-xs font-bold text-purple-950"><i class="fa-solid fa-crown text-purple-600 mr-1"></i>Mon patron est génial</span>
-                        <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-200 text-purple-900">Hors plafond</span>
-                      </div>
-                      <p class="text-[11px] text-slate-600 mt-0.5">Direct Admin • Montant libre</p>
+                    <div class="p-3.5 rounded-xl border-2 border-slate-200 peer-checked:border-purple-600 peer-checked:bg-purple-50/70 hover:bg-slate-50 transition flex items-center justify-between">
+                      <span class="text-xs font-bold text-purple-950 flex items-center gap-2">
+                        <i class="fa-solid fa-crown text-purple-600"></i> Ticket Mon patron est génial
+                      </span>
                     </div>
                   </label>
                 </div>
@@ -1151,7 +1123,7 @@
                 <div>
                   <label for="inputJustificationAdmin" class="block text-xs font-bold text-purple-950 mb-1">Justification Admin *</label>
                   <textarea id="inputJustificationAdmin" rows="2" oninput="updateTicketFormCalculations()"
-                    placeholder="Motif de la demande hors plafond..."
+                    placeholder="Motif..."
                     class="w-full rounded-xl border border-purple-300 bg-white px-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-purple-600 outline-none"></textarea>
                 </div>
                 <div class="flex flex-wrap gap-1.5">
@@ -1161,40 +1133,31 @@
                 </div>
               </div>
 
-              <!-- Mode de remise -->
+              <!-- Mode de remise (sans explications sous les boutons) -->
               <div>
                 <label class="block text-xs font-bold text-slate-600 mb-1.5">Mode de remise</label>
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <label class="cursor-pointer">
                     <input type="radio" name="typeRemise" value="DIRECT" checked onchange="updateTicketFormCalculations()" class="peer sr-only" />
-                    <div class="p-3 rounded-xl border-2 border-slate-200 peer-checked:border-indigo-600 peer-checked:bg-indigo-50/60 hover:bg-slate-50 transition">
-                      <div class="flex items-center justify-between">
-                        <span class="text-xs font-bold text-slate-900">Directe</span>
-                        <i class="fa-solid fa-cash-register text-indigo-600 text-xs"></i>
-                      </div>
-                      <p class="text-[11px] text-slate-500 mt-0.5">10% déduits en caisse</p>
+                    <div class="p-3.5 rounded-xl border-2 border-slate-200 peer-checked:border-indigo-600 peer-checked:bg-indigo-50/60 hover:bg-slate-50 transition flex items-center justify-between">
+                      <span class="text-xs font-bold text-slate-900">Remise Directe</span>
+                      <i class="fa-solid fa-cash-register text-indigo-600 text-xs"></i>
                     </div>
                   </label>
 
                   <label class="cursor-pointer">
                     <input type="radio" name="typeRemise" value="DIFFERE_CUMUL" onchange="updateTicketFormCalculations()" class="peer sr-only" />
-                    <div class="p-3 rounded-xl border-2 border-slate-200 peer-checked:border-indigo-600 peer-checked:bg-indigo-50/60 hover:bg-slate-50 transition">
-                      <div class="flex items-center justify-between">
-                        <span class="text-xs font-bold text-slate-900">Cumuler 10%</span>
-                        <i class="fa-solid fa-plus-circle text-emerald-600 text-xs"></i>
-                      </div>
-                      <p class="text-[11px] text-slate-500 mt-0.5">Ajoute au solde différé</p>
+                    <div class="p-3.5 rounded-xl border-2 border-slate-200 peer-checked:border-indigo-600 peer-checked:bg-indigo-50/60 hover:bg-slate-50 transition flex items-center justify-between">
+                      <span class="text-xs font-bold text-slate-900">Différé : Cumuler 10%</span>
+                      <i class="fa-solid fa-plus-circle text-emerald-600 text-xs"></i>
                     </div>
                   </label>
 
                   <label class="cursor-pointer">
                     <input type="radio" name="typeRemise" value="DIFFERE_UTILISATION" onchange="updateTicketFormCalculations()" class="peer sr-only" />
-                    <div class="p-3 rounded-xl border-2 border-slate-200 peer-checked:border-indigo-600 peer-checked:bg-indigo-50/60 hover:bg-slate-50 transition">
-                      <div class="flex items-center justify-between">
-                        <span class="text-xs font-bold text-slate-900">Utiliser Solde</span>
-                        <i class="fa-solid fa-wallet text-amber-600 text-xs"></i>
-                      </div>
-                      <p class="text-[11px] text-slate-500 mt-0.5">Dispo : ${formatEuro(user.soldeDiffere)}</p>
+                    <div class="p-3.5 rounded-xl border-2 border-slate-200 peer-checked:border-indigo-600 peer-checked:bg-indigo-50/60 hover:bg-slate-50 transition flex items-center justify-between">
+                      <span class="text-xs font-bold text-slate-900">Différé : Utiliser Solde</span>
+                      <i class="fa-solid fa-wallet text-amber-600 text-xs"></i>
                     </div>
                   </label>
                 </div>
@@ -1226,7 +1189,7 @@
                 </div>
 
                 <div id="dynamicDiffereCumulBox" class="hidden">
-                  <label class="block text-xs font-bold text-slate-700 mb-1">Ajout cagnotte (10%)</label>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Remise différée (10%)</label>
                   <div id="displayCalculatedDiffere" class="w-full rounded-xl bg-slate-100 border border-slate-300 px-3 py-2 text-sm font-mono font-bold text-indigo-700">0,00 €</div>
                 </div>
 
@@ -1246,7 +1209,7 @@
 
               <!-- Feedback calcul -->
               <div id="liveCalculationFeedback" class="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600">
-                Saisissez le montant des courses pour calculer votre remise.
+                Saisissez le montant des courses.
               </div>
 
               <!-- Photo du ticket -->
@@ -1260,7 +1223,7 @@
                 <div id="photoPreviewContainer" class="hidden mt-2.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3">
                   <div class="flex items-center gap-2.5">
                     <img id="photoPreviewImg" src="" alt="Aperçu" class="w-10 h-12 object-cover rounded-lg border border-slate-300 cursor-pointer" onclick="previewDraftPhoto()" />
-                    <span class="text-xs font-bold text-emerald-700"><i class="fa-solid fa-circle-check mr-1"></i>Photo jointe</span>
+                    <span class="text-xs font-bold text-emerald-700"><i class="fa-solid fa-circle-check mr-1"></i>Photo prête</span>
                   </div>
                   <button type="button" onclick="clearDraftPhoto()" class="text-xs text-rose-600 hover:underline font-semibold">Retirer</button>
                 </div>
@@ -1268,7 +1231,7 @@
 
               <button type="submit" id="btnSubmitTicket" class="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold text-sm shadow-sm transition flex items-center justify-center gap-2">
                 <i class="fa-solid fa-paper-plane"></i>
-                <span>${isManager ? 'Valider mon ticket' : 'Envoyer le ticket'}</span>
+                <span>${isManager ? 'Auto-valider mon ticket' : 'Soumettre mon ticket'}</span>
               </button>
             </form>
           </div>
@@ -1608,22 +1571,9 @@
       const isSpecialAdmin = isSpecialAdminCircuitSelected();
 
       const specialBox = document.getElementById('specialAdminJustificationBox');
-      const headerBadge = document.getElementById('formHeaderCircuitBadge');
       const submitBtn = document.getElementById('btnSubmitTicket');
 
       if (specialBox) specialBox.classList.toggle('hidden', !isSpecialAdmin);
-      if (headerBadge) {
-        if (isSpecialAdmin) {
-          headerBadge.className = 'text-[11px] px-2.5 py-0.5 rounded-full bg-purple-500/30 text-purple-200 font-semibold';
-          headerBadge.innerHTML = '👑 Hors plafond 50 €';
-        } else if (isManager) {
-          headerBadge.className = 'text-[11px] px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-semibold';
-          headerBadge.innerHTML = '⚡ Auto-validation';
-        } else {
-          headerBadge.className = 'text-[11px] px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-semibold';
-          headerBadge.innerHTML = '⏱️ Validation 10 min';
-        }
-      }
 
       const typeRemise = getSelectedTypeRemise();
       const directBox = document.getElementById('dynamicDirectInputBox');
@@ -1650,8 +1600,8 @@
         submitBtn.innerHTML = isSpecialAdmin
           ? `<i class="fa-solid fa-crown"></i><span>Envoyer à l'Admin</span>`
           : (isManager
-            ? `<i class="fa-solid fa-check"></i><span>Auto-valider le ticket</span>`
-            : `<i class="fa-solid fa-paper-plane"></i><span>Envoyer le ticket</span>`);
+            ? `<i class="fa-solid fa-check"></i><span>Auto-valider mon ticket</span>`
+            : `<i class="fa-solid fa-paper-plane"></i><span>Soumettre mon ticket</span>`);
       }
 
       if (!evaluation.valid) {
@@ -2330,31 +2280,26 @@
           <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
             <div class="text-[11px] font-bold text-slate-400 uppercase">Solde Différé Dispo</div>
             <div class="text-xl font-extrabold font-mono text-indigo-700 mt-1">${formatEuro(totalSoldeDiffereStore)}</div>
-            <div class="text-[11px] text-slate-500 mt-0.5">En cagnotte</div>
           </div>
 
           <div class="bg-white p-4 rounded-2xl shadow-sm border border-emerald-200">
             <div class="text-[11px] font-bold text-emerald-700 uppercase">Solde Différé Utilisé</div>
             <div class="text-xl font-extrabold font-mono text-emerald-600 mt-1">${formatEuro(totalSoldeDiffereUtiliseStore)}</div>
-            <div class="text-[11px] text-slate-500 mt-0.5">Décompté en caisse</div>
           </div>
 
           <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
             <div class="text-[11px] font-bold text-slate-400 uppercase">Ticket Moyen</div>
             <div class="text-xl font-extrabold font-mono text-slate-900 mt-1">${formatEuro(averageTicket)}</div>
-            <div class="text-[11px] text-slate-500 mt-0.5">${totalValidatedCount} ticket(s) validé(s)</div>
           </div>
 
           <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
             <div class="text-[11px] font-bold text-slate-400 uppercase">Jauge Mensuelle</div>
             <div class="text-xl font-extrabold font-mono text-slate-900 mt-1">${globalUtilizationRate.toFixed(0)}%</div>
-            <div class="text-[11px] text-slate-500 mt-0.5">${formatEuro(totalDiscountUsedStore)} / ${formatEuro(maxStoreDiscountCapacity)}</div>
           </div>
 
           <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 col-span-2 sm:col-span-1">
             <div class="text-[11px] font-bold text-slate-400 uppercase">À Arbitrer</div>
             <div class="text-xl font-extrabold font-mono ${urgentTickets.length > 0 ? 'text-rose-600' : 'text-slate-900'} mt-1">${urgentTickets.length}</div>
-            <div class="text-[11px] text-slate-500 mt-0.5">Instance Admin</div>
           </div>
         </div>
 
@@ -2363,11 +2308,8 @@
           <!-- Graphique 1 : Utilisation du Solde Différé des Employés -->
           <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-3">
             <div class="flex items-center justify-between">
-              <div>
-                <h3 class="font-bold text-sm text-slate-900"><i class="fa-solid fa-wallet text-emerald-600 mr-1.5"></i>Utilisation du Solde Différé des Employés</h3>
-                <p class="text-xs text-slate-500">Montant décompté vs Solde restant par collaborateur</p>
-              </div>
-              <span class="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-mono text-xs font-bold">Utilisé : ${formatEuro(totalSoldeDiffereUtiliseStore)}</span>
+              <h3 class="font-bold text-sm text-slate-900"><i class="fa-solid fa-wallet text-emerald-600 mr-1.5"></i>Utilisation du Solde Différé des Employés</h3>
+              <span class="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-mono text-xs font-bold">${formatEuro(totalSoldeDiffereUtiliseStore)}</span>
             </div>
             <div class="h-56 w-full">
               <canvas id="adminDeferredUsageChart"></canvas>
@@ -2377,11 +2319,8 @@
           <!-- Graphique 2 : Solde Différé Disponible par Salarié -->
           <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-3">
             <div class="flex items-center justify-between">
-              <div>
-                <h3 class="font-bold text-sm text-slate-900"><i class="fa-solid fa-piggy-bank text-indigo-600 mr-1.5"></i>Solde Différé Disponible par Collaborateur</h3>
-                <p class="text-xs text-slate-500">Cagnotte actuelle (RAZ auto le 1er janvier)</p>
-              </div>
-              <span class="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-mono text-xs font-bold">Total : ${formatEuro(totalSoldeDiffereStore)}</span>
+              <h3 class="font-bold text-sm text-slate-900"><i class="fa-solid fa-piggy-bank text-indigo-600 mr-1.5"></i>Solde Différé Disponible</h3>
+              <span class="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-mono text-xs font-bold">${formatEuro(totalSoldeDiffereStore)}</span>
             </div>
             <div class="h-56 w-full">
               <canvas id="adminDeferredBalanceChart"></canvas>
