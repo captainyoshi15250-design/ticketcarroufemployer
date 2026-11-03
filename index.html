@@ -955,9 +955,6 @@
         SALARIE: '<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800 border border-indigo-200"><i class="fa-solid fa-id-badge mr-1"></i>Salarié</span>'
       }[user.role];
 
-      const urgentCountForManager = state.tickets.filter(t => t.status === 'EN_ATTENTE_MANAGER').length;
-      const urgentCountForAdmin = state.tickets.filter(t => t.status === 'EXPIRE_VERS_ADMIN' || t.status === 'REFUSE_PAR_MANAGER' || t.status === 'DEMANDE_SPECIALE_ADMIN').length;
-
       banner.innerHTML = `
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-sm">
@@ -968,41 +965,12 @@
               <h1 class="text-base font-bold text-slate-900">${user.prenom} ${user.nom}</h1>
               ${roleBadge}
             </div>
-            <div class="text-xs text-slate-500 flex flex-wrap items-center gap-x-3">
+            <div class="text-xs text-slate-500 flex flex-wrap items-center gap-x-3 mt-0.5">
               <span><i class="fa-solid fa-store text-slate-400 mr-1"></i>${user.rayon}</span>
+              <span><i class="fa-regular fa-envelope text-slate-400 mr-1"></i>${user.email}</span>
               <span><i class="fa-solid fa-phone text-slate-400 mr-1"></i>${user.telephone}</span>
             </div>
           </div>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-2.5">
-          ${user.role !== 'ADMIN' ? `
-            <div class="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3 text-xs">
-              <div>
-                <span class="text-slate-400 block text-[10px] uppercase font-semibold">Mois en cours</span>
-                <span class="font-bold font-mono ${user.remiseUtiliseeMois > MONTHLY_CAP ? 'text-purple-700' : 'text-slate-900'}">${formatEuro(user.remiseUtiliseeMois)} / 50 €</span>
-              </div>
-              <div class="h-6 w-px bg-slate-200"></div>
-              <div>
-                <span class="text-slate-400 block text-[10px] uppercase font-semibold">Solde Différé</span>
-                <span class="font-bold font-mono text-indigo-600">${formatEuro(user.soldeDiffere)}</span>
-              </div>
-            </div>
-          ` : ''}
-
-          ${user.role === 'MANAGER' ? `
-            <div class="px-3 py-1.5 rounded-xl ${urgentCountForManager > 0 ? 'bg-amber-50 border-amber-300 text-amber-900' : 'bg-slate-50 border-slate-200 text-slate-600'} border text-xs font-bold flex items-center gap-1.5">
-              <i class="fa-solid fa-bell ${urgentCountForManager > 0 ? 'text-amber-600 animate-bounce' : 'text-slate-400'}"></i>
-              <span>${urgentCountForManager} en attente</span>
-            </div>
-          ` : ''}
-
-          ${user.role === 'ADMIN' ? `
-            <div class="px-3 py-1.5 rounded-xl ${urgentCountForAdmin > 0 ? 'bg-rose-50 border-rose-300 text-rose-900' : 'bg-emerald-50 border-emerald-200 text-emerald-800'} border text-xs font-bold flex items-center gap-1.5">
-              <i class="fa-solid fa-shield-halved ${urgentCountForAdmin > 0 ? 'text-rose-600' : 'text-emerald-600'}"></i>
-              <span>${urgentCountForAdmin} à arbitrer</span>
-            </div>
-          ` : ''}
         </div>
       `;
     }
@@ -1090,29 +1058,27 @@
           <div class="lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
             <div class="px-5 py-3.5 bg-slate-900 text-white flex items-center gap-2">
               <i class="fa-solid fa-camera text-indigo-400"></i>
-              <h3 class="font-bold text-sm">Soumettre mon ticket</h3>
+              <h3 class="font-bold text-sm">Soumettre un Ticket</h3>
             </div>
 
             <form id="ticketSubmissionForm" onsubmit="handleTicketSubmit(event)" class="p-5 space-y-4">
-              <!-- Type de ticket (sans explications sous les boutons) -->
+              <!-- Type de ticket (uniquement icône et titre) -->
               <div>
                 <label class="block text-xs font-bold text-slate-600 mb-1.5">Type de ticket</label>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <label class="cursor-pointer">
                     <input type="radio" name="circuitValidation" value="STANDARD" checked onchange="updateTicketFormCalculations()" class="peer sr-only" />
-                    <div class="p-3.5 rounded-xl border-2 border-slate-200 peer-checked:border-indigo-600 peer-checked:bg-indigo-50/60 hover:bg-slate-50 transition flex items-center justify-between">
-                      <span class="text-xs font-bold text-slate-900 flex items-center gap-2">
-                        <i class="fa-solid fa-receipt text-indigo-600"></i> Ticket Normal
-                      </span>
+                    <div class="p-3.5 rounded-xl border-2 border-slate-200 peer-checked:border-indigo-600 peer-checked:bg-indigo-50/60 hover:bg-slate-50 transition flex items-center gap-2">
+                      <i class="fa-solid fa-receipt text-indigo-600 text-xs"></i>
+                      <span class="text-xs font-bold text-slate-900">Ticket Normal</span>
                     </div>
                   </label>
 
                   <label class="cursor-pointer">
                     <input type="radio" name="circuitValidation" value="SPECIALE_ADMIN" onchange="updateTicketFormCalculations()" class="peer sr-only" />
-                    <div class="p-3.5 rounded-xl border-2 border-slate-200 peer-checked:border-purple-600 peer-checked:bg-purple-50/70 hover:bg-slate-50 transition flex items-center justify-between">
-                      <span class="text-xs font-bold text-purple-950 flex items-center gap-2">
-                        <i class="fa-solid fa-crown text-purple-600"></i> Ticket Mon patron est génial
-                      </span>
+                    <div class="p-3.5 rounded-xl border-2 border-slate-200 peer-checked:border-purple-600 peer-checked:bg-purple-50/70 hover:bg-slate-50 transition flex items-center gap-2">
+                      <i class="fa-solid fa-crown text-purple-600 text-xs"></i>
+                      <span class="text-xs font-bold text-purple-950">Ticket Mon patron est génial</span>
                     </div>
                   </label>
                 </div>
