@@ -478,7 +478,7 @@
       <div class="px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between">
         <div class="flex items-center gap-2">
           <i class="fa-solid fa-user-pen text-indigo-400"></i>
-          <h3 class="font-bold text-sm">Modifier le compte</h3>
+          <h3 class="font-bold text-sm">Modifier le compte & le statut</h3>
         </div>
         <button onclick="closeEditUserModal()" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-white">
           <i class="fa-solid fa-xmark"></i>
@@ -498,7 +498,7 @@
         </div>
 
         <div>
-          <label class="block text-xs font-bold text-slate-700 mb-1">Rayon *</label>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Rayon / Fonction *</label>
           <input type="text" id="editUserRayon" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500">
         </div>
 
@@ -520,10 +520,11 @@
 
         <div id="editUserRoleAndBalanceBox" class="grid grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs font-bold text-slate-700 mb-1">Rôle</label>
-            <select id="editUserRole" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-indigo-500">
+            <label class="block text-xs font-bold text-slate-700 mb-1">Statut / Rôle *</label>
+            <select id="editUserRole" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500">
               <option value="SALARIE">Salarié</option>
               <option value="MANAGER">Manager</option>
+              <option value="ADMIN">Admin</option>
             </select>
           </div>
           <div>
@@ -645,6 +646,41 @@
       return label.charAt(0).toUpperCase() + label.slice(1);
     }
 
+    /* Distingue le compte système Comptabilité des collaborateurs (y compris les collaborateurs/patrons qui sont ADMIN) */
+    function isSystemComptaAccount(user) {
+      if (!user) return false;
+      return user.id === 'admin-1' || (user.email && user.email.trim().toLowerCase() === 'compta@sogedis15.fr');
+    }
+
+    function isSteveFeuilletProfile(user) {
+      if (!user) return false;
+      const p = (user.prenom || '').trim().toLowerCase();
+      const n = (user.nom || '').trim().toLowerCase();
+      const r = (user.rayon || '').trim().toLowerCase();
+      const full = `${p} ${n}`;
+      return (
+        (full.includes('steve') && full.includes('feuillet')) ||
+        (p === 'steve' && r.includes('patron')) ||
+        (n === 'feuillet' && r.includes('patron'))
+      );
+    }
+
+    /* S'assure que le profil Steve Feuillet (Patron) passe automatiquement en compte ADMIN */
+    function ensureSteveFeuilletIsAdmin(usersArray) {
+      if (!Array.isArray(usersArray)) return;
+      usersArray.forEach(u => {
+        if (isSteveFeuilletProfile(u)) {
+          if (!u.roleManuallyChangedByAdmin && u.role !== 'ADMIN') {
+            u.role = 'ADMIN';
+            if (!u.rayon || u.rayon.trim() === '') {
+              u.rayon = 'Patron';
+            }
+            syncUserToCloud(u);
+          }
+        }
+      });
+    }
+
     function getDefaultUsers() {
       const cycleYear = getCurrentFeb1stCycleYear();
       return [
@@ -668,7 +704,7 @@
     let state = {
       currentUserId: null,
       managerActiveTab: 'QUEUE',
-      adminActiveTab: 'DASHBOARD',
+      adminActiveTab: 'DASHBOARD', // 'DASHBOARD' | 'TICKETS' | 'USERS' | 'PERSONAL'
       adminDashboardPeriodMode: 'CURRENT_MONTH', // 'TOTAL' | 'CURRENT_MONTH' | 'PAST_MONTH'
       adminDashboardSelectedMonth: getPreviousMonthKey(),
       adminTicketFilter: 'ALL',
@@ -685,7 +721,7 @@
       let resetCount = 0;
 
       state.users.forEach(u => {
-        if (u.role === 'ADMIN') {
+        if (isSystemComptaAccount(u)) {
           if (!u.cycleFebSoldeDiffere) u.cycleFebSoldeDiffere = currentCycleYear;
           return;
         }
@@ -735,14 +771,12 @@
     async function resetAllAccountsForLaunch() {
       const currentCycleYear = getCurrentFeb1stCycleYear();
 
-      // 1. Purge de tous les tickets existants pour remettre 100% des indicateurs (courses, différé cumulé, différé utilisé, nb tickets) à 0
       const ticketsToDelete = [...state.tickets];
       state.tickets = [];
       for (const t of ticketsToDelete) {
         await deleteTicketFromCloud(t.id);
       }
 
-      // 2. Remise à 0,00 € de tous les compteurs individuels des comptes (remise immédiate + cagnotte différée)
       for (const u of state.users) {
         u.remiseUtiliseeMois = 0.00;
         u.soldeDiffere = 0.00;
@@ -923,13 +957,14 @@
                   await syncUserToCloud(u);
                 }
               } else {
-                const adminUser = loadedUsers.find(u => u.role === 'ADMIN');
-                if (adminUser) {
-                  adminUser.email = 'compta@sogedis15.fr';
-                  adminUser.motDePasse = 'bibi.15/';
+                const comptaAdmin = loadedUsers.find(u => u.id === 'admin-1');
+                if (comptaAdmin && !comptaAdmin.roleManuallyChangedByAdmin) {
+                  comptaAdmin.email = comptaAdmin.email || 'compta@sogedis15.fr';
+                  comptaAdmin.motDePasse = comptaAdmin.motDePasse || 'bibi.15/';
                 }
                 state.users = loadedUsers;
               }
+              ensureSteveFeuilletIsAdmin(state.users);
               checkAndApplyCleanSlateUsersReset();
               checkAndApplyAnnualFeb1stReset();
               renderApp();
@@ -997,6 +1032,7 @@
         if (!state.users || state.users.length === 0) {
           state.users = getDefaultUsers();
         }
+        ensureSteveFeuilletIsAdmin(state.users);
         checkAndApplyCleanSlateUsersReset();
         checkAndApplyAnnualFeb1stReset();
         renderApp();
@@ -1238,6 +1274,7 @@
 
       if (errBox) errBox.classList.add('hidden');
       state.currentUserId = matchedUser.id;
+      ensureSteveFeuilletIsAdmin(state.users);
       checkAndApplyAnnualFeb1stReset();
       renderApp();
       showToast(`Bienvenue <strong>${matchedUser.prenom} ${matchedUser.nom}</strong>.`, 'success');
@@ -1296,7 +1333,7 @@
         .filter(t => t.userId === user.id)
         .sort((a, b) => b.createdAt - a.createdAt);
 
-      const isManager = user.role === 'MANAGER';
+      const canAutoValidate = user.role === 'MANAGER' || user.role === 'ADMIN';
 
       return `
         <!-- Synthèse Remise Immédiate 50€ & Solde Différé -->
@@ -1506,7 +1543,7 @@
 
               <button type="submit" id="btnSubmitTicket" class="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold text-sm shadow-sm transition flex items-center justify-center gap-2">
                 <i class="fa-solid fa-paper-plane"></i>
-                <span>${isManager ? 'Auto-valider mon ticket' : 'Soumettre mon ticket'}</span>
+                <span>${canAutoValidate ? 'Auto-valider mon ticket' : 'Soumettre mon ticket'}</span>
               </button>
             </form>
           </div>
@@ -1660,7 +1697,7 @@
 
     function evaluateCurrentTicketForm() {
       const user = getCurrentUser();
-      const isManager = user.role === 'MANAGER';
+      const canAutoValidate = user.role === 'MANAGER' || user.role === 'ADMIN';
       const isSpecialAdmin = isSpecialAdminCircuitSelected();
       const justificationEl = document.getElementById('inputJustificationAdmin');
       const justificationText = justificationEl ? justificationEl.value.trim() : '';
@@ -1705,7 +1742,7 @@
         }
 
         const diffFrom10 = Math.abs(saisieDirecte - theoretical10);
-        const diffFromCap = (!isManager && remainingCap > 0 && theoretical10 > remainingCap)
+        const diffFromCap = (!canAutoValidate && remainingCap > 0 && theoretical10 > remainingCap)
           ? Math.abs(saisieDirecte - remainingCap)
           : 999;
 
@@ -1716,7 +1753,7 @@
           };
         }
 
-        if (isManager) {
+        if (canAutoValidate) {
           if (theoretical10 > remainingCap) {
             return {
               valid: false,
@@ -1771,7 +1808,7 @@
           };
         }
 
-        if (isManager) {
+        if (canAutoValidate) {
           if (theoretical10 > remainingCap) {
             return {
               valid: false,
@@ -1842,7 +1879,7 @@
 
     function updateTicketFormCalculations() {
       const user = getCurrentUser();
-      const isManager = user && user.role === 'MANAGER';
+      const canAutoValidate = user && (user.role === 'MANAGER' || user.role === 'ADMIN');
       const isSpecialAdmin = isSpecialAdminCircuitSelected();
 
       const specialBox = document.getElementById('specialAdminJustificationBox');
@@ -1874,7 +1911,7 @@
       if (submitBtn) {
         submitBtn.innerHTML = isSpecialAdmin
           ? `<i class="fa-solid fa-crown"></i><span>Envoyer à l'Admin</span>`
-          : (isManager
+          : (canAutoValidate
             ? `<i class="fa-solid fa-check"></i><span>Auto-valider mon ticket</span>`
             : `<i class="fa-solid fa-paper-plane"></i><span>Soumettre mon ticket</span>`);
       }
@@ -1991,7 +2028,7 @@
 
       const now = Date.now();
       const newTicketId = 'TCK-' + Math.floor(8500 + Math.random() * 1400);
-      const isManager = user.role === 'MANAGER';
+      const canAutoValidate = user.role === 'MANAGER' || user.role === 'ADMIN';
       const isSpecialAdmin = !!evalResult.isDemandeSpeciale;
 
       const newTicket = {
@@ -2006,8 +2043,8 @@
         plafonne: evalResult.plafonne,
         isDemandeSpeciale: isSpecialAdmin,
         justificationSalarie: evalResult.justificationSalarie || null,
-        status: isSpecialAdmin ? 'DEMANDE_SPECIALE_ADMIN' : (isManager ? 'VALIDE' : 'EN_ATTENTE_MANAGER'),
-        validatedBy: (!isSpecialAdmin && isManager) ? `Auto-validation (${user.prenom} ${user.nom})` : null,
+        status: isSpecialAdmin ? 'DEMANDE_SPECIALE_ADMIN' : (canAutoValidate ? 'VALIDE' : 'EN_ATTENTE_MANAGER'),
+        validatedBy: (!isSpecialAdmin && canAutoValidate) ? `Auto-validation (${user.prenom} ${user.nom})` : null,
         refusedBy: null,
         motifRefus: null,
         adminNote: null,
@@ -2019,7 +2056,7 @@
 
       if (isSpecialAdmin) {
         showToast(`👑 Ticket <strong>${newTicket.id}</strong> envoyé à l'Admin.`, 'info');
-      } else if (isManager) {
+      } else if (canAutoValidate) {
         applyTicketFinancialImpact(newTicket);
         showToast(`Ticket <strong>${newTicket.id}</strong> auto-validé.`, 'success');
       } else {
@@ -2249,6 +2286,7 @@
 
     /* ==================== VUE ADMINISTRATEUR ==================== */
     function renderAdminView() {
+      const user = getCurrentUser();
       const container = document.getElementById('viewAdmin');
       const urgentTickets = state.tickets.filter(t => isTicketToProcessByAdmin(t));
 
@@ -2267,7 +2305,11 @@
             </button>
             <button onclick="setAdminTab('USERS')" class="px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${state.adminActiveTab === 'USERS' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}">
               <i class="fa-solid fa-users-gear"></i>
-              <span>Comptes (${state.users.length})</span>
+              <span>Comptes & Statuts (${state.users.length})</span>
+            </button>
+            <button onclick="setAdminTab('PERSONAL')" class="px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${state.adminActiveTab === 'PERSONAL' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}">
+              <i class="fa-solid fa-user-tag"></i>
+              <span>Mon Espace Personnel</span>
             </button>
           </div>
 
@@ -2290,7 +2332,13 @@
         ${state.adminActiveTab === 'DASHBOARD' ? renderAdminDashboardHTML() : ''}
         ${state.adminActiveTab === 'TICKETS' ? renderAdminTicketsHTML() : ''}
         ${state.adminActiveTab === 'USERS' ? renderAdminUsersHTML() : ''}
+        ${state.adminActiveTab === 'PERSONAL' ? buildPersonalSpaceHTML(user) : ''}
       `;
+
+      if (state.adminActiveTab === 'PERSONAL') {
+        updateTicketFormCalculations();
+        refreshPhotoPreviewUI();
+      }
     }
 
     function setAdminTab(tab) {
@@ -2336,9 +2384,24 @@
       renderApp();
     }
 
+    /* Changement rapide du statut (SALARIE / MANAGER / ADMIN) en 1 clic par un Admin */
+    function changeUserRoleQuick(userId, newRole) {
+      const user = getUserById(userId);
+      if (!user) return;
+      if (!['SALARIE', 'MANAGER', 'ADMIN'].includes(newRole)) return;
+
+      user.role = newRole;
+      user.roleManuallyChangedByAdmin = true;
+      syncUserToCloud(user);
+
+      const roleLabel = newRole === 'ADMIN' ? 'Admin' : newRole === 'MANAGER' ? 'Manager' : 'Salarié';
+      showToast(`Statut de <strong>${user.prenom} ${user.nom}</strong> passé en <strong>${roleLabel}</strong>.`, 'success');
+      renderApp();
+    }
+
     function resetSingleUserSoldeDiffere(userId) {
       const user = getUserById(userId);
-      if (!user || user.role === 'ADMIN') return;
+      if (!user) return;
 
       const previousBalance = Number(user.soldeDiffere || 0);
       if (previousBalance === 0) {
@@ -2357,7 +2420,7 @@
 
     function resetSingleUserImmediateDiscount(userId) {
       const user = getUserById(userId);
-      if (!user || user.role === 'ADMIN') return;
+      if (!user) return;
       user.remiseUtiliseeMois = 0.00;
       syncUserToCloud(user);
       showToast(`Remise immédiate de <strong>${user.prenom} ${user.nom}</strong> remise à 0 €.`, 'success');
@@ -2367,12 +2430,10 @@
     function resetAllDeferredBalancesAnnual() {
       const cycleYear = getCurrentFeb1stCycleYear();
       state.users.forEach(u => {
-        if (u.role !== 'ADMIN') {
-          u.soldeDiffere = 0.00;
-          u.cycleFebSoldeDiffere = cycleYear;
-          u.anneeSoldeDiffere = cycleYear;
-          syncUserToCloud(u);
-        }
+        u.soldeDiffere = 0.00;
+        u.cycleFebSoldeDiffere = cycleYear;
+        u.anneeSoldeDiffere = cycleYear;
+        syncUserToCloud(u);
       });
       showToast('Tous les soldes différés ont été remis à 0,00 €.', 'success');
       renderApp();
@@ -2431,13 +2492,13 @@
       const validatedTickets = periodTickets.filter(t => t.status === 'VALIDE');
 
       const eligibleUsers = state.users
-        .filter(u => u.role !== 'ADMIN')
+        .filter(u => !isSystemComptaAccount(u))
         .sort((a, b) => `${a.nom} ${a.prenom}`.localeCompare(`${b.nom} ${b.prenom}`, 'fr'));
 
       const searchQuery = (state.adminDashboardSearch || '').trim().toLowerCase();
       const filteredUsers = eligibleUsers.filter(u => {
         if (!searchQuery) return true;
-        return `${u.prenom} ${u.nom} ${u.rayon} ${u.email} ${u.telephone}`.toLowerCase().includes(searchQuery);
+        return `${u.prenom} ${u.nom} ${u.rayon} ${u.email} ${u.telephone} ${u.role}`.toLowerCase().includes(searchQuery);
       });
 
       const sumCoursesValidated = validatedTickets.reduce((acc, t) => acc + Number(t.montantCourses || 0), 0);
@@ -2549,15 +2610,15 @@
             <div>
               <h3 class="font-bold text-sm text-slate-900 flex items-center gap-2">
                 <i class="fa-solid fa-table text-indigo-600"></i>
-                <span>Tableau de Pilotage Individuel par Salarié (${filteredUsers.length}) — ${periodLabel}</span>
+                <span>Tableau de Pilotage Individuel par Collaborateur (${filteredUsers.length}) — ${periodLabel}</span>
               </h3>
-              <p class="text-xs text-slate-500 mt-0.5">Suivi des remises immédiates, cagnottes différées (RAZ automatique chaque 1er février) et tickets.</p>
+              <p class="text-xs text-slate-500 mt-0.5">Suivi des remises immédiates, cagnottes différées (RAZ automatique chaque 1er février), tickets et modification directe des statuts.</p>
             </div>
 
             <div class="flex items-center gap-2">
               <div class="relative">
                 <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
-                <input type="text" id="adminDashboardSearchInput" value="${state.adminDashboardSearch || ''}" oninput="handleAdminDashboardSearch(this.value)" placeholder="Rechercher salarié, rayon..." class="rounded-xl border border-slate-300 pl-8 pr-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-500 w-56">
+                <input type="text" id="adminDashboardSearchInput" value="${state.adminDashboardSearch || ''}" oninput="handleAdminDashboardSearch(this.value)" placeholder="Rechercher nom, rayon, rôle..." class="rounded-xl border border-slate-300 pl-8 pr-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-500 w-56">
               </div>
             </div>
           </div>
@@ -2566,8 +2627,8 @@
             <table class="w-full text-left border-collapse">
               <thead>
                 <tr class="bg-slate-900 text-white text-[10px] font-bold uppercase tracking-wider">
-                  <th class="py-3 px-4">Salarié & Coordonnées</th>
-                  <th class="py-3 px-3">Rayon / Rôle</th>
+                  <th class="py-3 px-4">Collaborateur & Coordonnées</th>
+                  <th class="py-3 px-3">Rayon / Statut</th>
                   <th class="py-3 px-3 text-center">Tickets (${state.adminDashboardPeriodMode === 'TOTAL' ? 'Total' : 'Mois'})</th>
                   <th class="py-3 px-3 text-right">Total Courses</th>
                   <th class="py-3 px-4">${state.adminDashboardPeriodMode === 'TOTAL' ? 'Remises Cumulées' : 'Remise Mensuelle (Max 50€)'}</th>
@@ -2582,7 +2643,7 @@
                 ${filteredUsers.length === 0 ? `
                   <tr>
                     <td colspan="10" class="py-8 text-center text-slate-400">
-                      Aucun salarié enregistré. Créez un collaborateur dans l'onglet <strong>Comptes</strong>.
+                      Aucun collaborateur enregistré. Créez un collaborateur dans l'onglet <strong>Comptes & Statuts</strong>.
                     </td>
                   </tr>
                 ` : filteredUsers.map(u => {
@@ -2609,19 +2670,32 @@
                   const pctImmediate = Math.min(100, (periodRemiseUsed / MONTHLY_CAP) * 100);
                   const isOverCap = periodRemiseUsed > MONTHLY_CAP;
 
+                  const roleSelectColor = u.role === 'ADMIN'
+                    ? 'bg-purple-100 text-purple-900 border-purple-300'
+                    : u.role === 'MANAGER'
+                      ? 'bg-amber-100 text-amber-900 border-amber-300'
+                      : 'bg-indigo-100 text-indigo-900 border-indigo-300';
+
                   return `
                     <tr class="hover:bg-slate-50/90 transition">
-                      <!-- Salarié -->
+                      <!-- Collaborateur -->
                       <td class="py-3 px-4">
-                        <div class="font-bold text-slate-900">${u.prenom} ${u.nom}</div>
+                        <div class="font-bold text-slate-900 flex items-center gap-1.5">
+                          <span>${u.prenom} ${u.nom}</span>
+                          ${u.role === 'ADMIN' ? '<i class="fa-solid fa-crown text-purple-600 text-[11px]" title="Compte Admin"></i>' : ''}
+                        </div>
                         <div class="text-[11px] text-slate-500 font-mono">${u.email}</div>
                         <div class="text-[11px] text-slate-400">${u.telephone}</div>
                       </td>
 
-                      <!-- Rayon / Rôle -->
+                      <!-- Rayon / Sélecteur direct de Statut -->
                       <td class="py-3 px-3">
-                        <div class="font-semibold text-slate-800">${u.rayon}</div>
-                        <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-bold ${u.role === 'MANAGER' ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}">${u.role}</span>
+                        <div class="font-semibold text-slate-800 mb-1">${u.rayon}</div>
+                        <select onchange="changeUserRoleQuick('${u.id}', this.value)" class="rounded-lg border px-2 py-0.5 text-[10px] font-extrabold outline-none cursor-pointer ${roleSelectColor}" title="Changer le statut du compte">
+                          <option value="SALARIE" ${u.role === 'SALARIE' ? 'selected' : ''}>SALARIÉ</option>
+                          <option value="MANAGER" ${u.role === 'MANAGER' ? 'selected' : ''}>MANAGER</option>
+                          <option value="ADMIN" ${u.role === 'ADMIN' ? 'selected' : ''}>ADMIN</option>
+                        </select>
                       </td>
 
                       <!-- Tickets -->
@@ -2680,7 +2754,7 @@
                       <!-- Actions Rapides -->
                       <td class="py-3 px-4 text-right">
                         <div class="flex items-center justify-end gap-1.5">
-                          <button onclick="openAdminCreateTicketModal('${u.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1" title="Créer un ticket pour ce salarié">
+                          <button onclick="openAdminCreateTicketModal('${u.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1" title="Créer un ticket pour ce collaborateur">
                             <i class="fa-solid fa-plus"></i> Ticket
                           </button>
                           <button onclick="inspectCollaboratorTickets('${u.id}')" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px]" title="Voir l'historique des tickets">
@@ -2722,7 +2796,7 @@
     /* ==================== SOUS-VUE ADMIN : TICKETS PAR SALARIÉ (DEMANDES À TRAITER TOUT EN HAUT) ==================== */
     function renderAdminTicketsHTML() {
       const collaborators = state.users
-        .filter(u => u.role !== 'ADMIN')
+        .filter(u => !isSystemComptaAccount(u))
         .sort((a, b) => {
           const urgentCountA = state.tickets.filter(t => t.userId === a.id && isTicketToProcessByAdmin(t)).length;
           const urgentCountB = state.tickets.filter(t => t.userId === b.id && isTicketToProcessByAdmin(t)).length;
@@ -2779,7 +2853,7 @@
                 <option value="ALL" ${state.adminSelectedUserId === 'ALL' ? 'selected' : ''}>👥 Tous les collaborateurs (${collaborators.length})</option>
                 ${collaborators.map(u => `
                   <option value="${u.id}" ${state.adminSelectedUserId === u.id ? 'selected' : ''}>
-                    ${u.prenom} ${u.nom} (${u.rayon})
+                    ${u.prenom} ${u.nom} (${u.rayon} • ${u.role})
                   </option>
                 `).join('')}
               </select>
@@ -2940,9 +3014,9 @@
     let adminDraftTicketPhoto = null;
 
     function openAdminCreateTicketModal(preselectedUserId = null) {
-      const collaborators = state.users.filter(u => u.role !== 'ADMIN');
+      const collaborators = state.users.filter(u => !isSystemComptaAccount(u));
       if (collaborators.length === 0) {
-        showToast('Créez d’abord un compte salarié ou manager.', 'warning');
+        showToast('Créez d’abord un compte collaborateur.', 'warning');
         return;
       }
 
@@ -3406,7 +3480,7 @@
       renderApp();
     }
 
-    /* SOUS-VUE ADMIN : GESTION DES COMPTES */
+    /* ==================== SOUS-VUE ADMIN : GESTION DES COMPTES & CHANGEMENT DE STATUT ==================== */
     function renderAdminUsersHTML() {
       return `
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
@@ -3421,22 +3495,22 @@
               <div class="grid grid-cols-2 gap-2.5">
                 <div>
                   <label class="block text-xs font-bold text-slate-700 mb-1">Prénom *</label>
-                  <input type="text" id="newUserPrenom" required placeholder="Thomas" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500" />
+                  <input type="text" id="newUserPrenom" required placeholder="Steve" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500" />
                 </div>
                 <div>
                   <label class="block text-xs font-bold text-slate-700 mb-1">Nom *</label>
-                  <input type="text" id="newUserNom" required placeholder="Bernard" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500" />
+                  <input type="text" id="newUserNom" required placeholder="Feuillet" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500" />
                 </div>
               </div>
 
               <div>
-                <label class="block text-xs font-bold text-slate-700 mb-1">Rayon *</label>
-                <input type="text" id="newUserRayon" required placeholder="Boucherie, Caisses..." class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500" />
+                <label class="block text-xs font-bold text-slate-700 mb-1">Rayon / Fonction *</label>
+                <input type="text" id="newUserRayon" required placeholder="Patron, Boucherie, Caisses..." class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
 
               <div>
                 <label class="block text-xs font-bold text-slate-700 mb-1">E-mail *</label>
-                <input type="email" id="newUserEmail" required placeholder="t.bernard@sogedis15.fr" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500" />
+                <input type="email" id="newUserEmail" required placeholder="s.feuillet@sogedis15.fr" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
 
               <div>
@@ -3444,7 +3518,7 @@
                   <label class="block text-xs font-bold text-slate-700">Mot de passe *</label>
                   <button type="button" onclick="generateRandomUserPassword()" class="text-[11px] font-bold text-indigo-600 hover:underline">Générer</button>
                 </div>
-                <input type="text" id="newUserPassword" required placeholder="Thomas.15!" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-mono font-semibold outline-none focus:ring-2 focus:ring-indigo-500" />
+                <input type="text" id="newUserPassword" required placeholder="Steve.15!" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-mono font-semibold outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
 
               <div>
@@ -3454,10 +3528,11 @@
 
               <div class="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label class="block text-xs font-bold text-slate-700 mb-1">Rôle *</label>
-                  <select id="newUserRole" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-indigo-500">
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Statut / Rôle *</label>
+                  <select id="newUserRole" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500">
                     <option value="SALARIE">Salarié</option>
                     <option value="MANAGER">Manager</option>
+                    <option value="ADMIN">Admin</option>
                   </select>
                 </div>
                 <div>
@@ -3474,9 +3549,12 @@
 
           <!-- Liste des comptes -->
           <div class="lg:col-span-8 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-            <div class="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
-              <h3 class="font-bold text-sm text-slate-900">Comptes Collaborateurs</h3>
-              <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700">${state.users.length}</span>
+            <div class="px-5 py-3.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 class="font-bold text-sm text-slate-900">Comptes & Modification des Statuts</h3>
+                <p class="text-[11px] text-slate-500">Changez directement le statut d'un compte (Salarié, Manager, Admin) via le menu déroulant.</p>
+              </div>
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700">${state.users.length} compte(s)</span>
             </div>
 
             <div class="overflow-x-auto">
@@ -3484,7 +3562,7 @@
                 <thead>
                   <tr class="bg-slate-50 border-b border-slate-200 text-[10px] font-bold uppercase text-slate-500">
                     <th class="py-2.5 px-4">Collaborateur</th>
-                    <th class="py-2.5 px-4">Rayon / Rôle</th>
+                    <th class="py-2.5 px-4">Rayon & Statut (Rôle)</th>
                     <th class="py-2.5 px-4">Accès</th>
                     <th class="py-2.5 px-4">Remise immédiate</th>
                     <th class="py-2.5 px-4">Solde Différé (RAZ 1er Fév.)</th>
@@ -3495,19 +3573,32 @@
                   ${state.users.map(u => {
                     const pct = Math.min(100, (u.remiseUtiliseeMois / MONTHLY_CAP) * 100);
                     const isOverCap = u.remiseUtiliseeMois > MONTHLY_CAP;
-                    const isMainAdmin = u.role === 'ADMIN';
+                    const isComptaSystem = isSystemComptaAccount(u);
                     const isPwdVisible = !!state.revealedPasswords[u.id];
                     const userTicketCount = state.tickets.filter(t => t.userId === u.id).length;
+
+                    const roleSelectColor = u.role === 'ADMIN'
+                      ? 'bg-purple-100 text-purple-900 border-purple-300'
+                      : u.role === 'MANAGER'
+                        ? 'bg-amber-100 text-amber-900 border-amber-300'
+                        : 'bg-indigo-100 text-indigo-900 border-indigo-300';
 
                     return `
                       <tr class="hover:bg-slate-50/80 transition">
                         <td class="py-3 px-4 font-bold text-slate-900">
-                          <div>${u.prenom} ${u.nom}</div>
+                          <div class="flex items-center gap-1.5">
+                            <span>${u.prenom} ${u.nom}</span>
+                            ${u.role === 'ADMIN' ? '<i class="fa-solid fa-crown text-purple-600 text-[11px]" title="Compte Admin"></i>' : ''}
+                          </div>
                           <div class="text-[11px] font-normal text-slate-400">${u.telephone}</div>
                         </td>
                         <td class="py-3 px-4">
-                          <div class="font-semibold text-slate-800">${u.rayon}</div>
-                          <span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold ${u.role === 'ADMIN' ? 'bg-purple-100 text-purple-800' : u.role === 'MANAGER' ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}">${u.role}</span>
+                          <div class="font-semibold text-slate-800 mb-1">${u.rayon}</div>
+                          <select onchange="changeUserRoleQuick('${u.id}', this.value)" class="rounded-lg border px-2 py-1 text-[10px] font-extrabold outline-none cursor-pointer ${roleSelectColor}">
+                            <option value="SALARIE" ${u.role === 'SALARIE' ? 'selected' : ''}>Salarié</option>
+                            <option value="MANAGER" ${u.role === 'MANAGER' ? 'selected' : ''}>Manager</option>
+                            <option value="ADMIN" ${u.role === 'ADMIN' ? 'selected' : ''}>Admin</option>
+                          </select>
                         </td>
                         <td class="py-3 px-4 font-mono text-[11px]">
                           <div class="text-slate-800">${u.email}</div>
@@ -3519,7 +3610,7 @@
                           </div>
                         </td>
                         <td class="py-3 px-4">
-                          ${isMainAdmin ? '—' : `
+                          ${isComptaSystem ? '—' : `
                             <div class="flex items-center gap-1.5">
                               <span class="font-mono font-bold ${isOverCap ? 'text-purple-700' : 'text-slate-900'}">${formatEuro(u.remiseUtiliseeMois)}</span>
                               <button onclick="resetSingleUserImmediateDiscount('${u.id}')" ${Number(u.remiseUtiliseeMois || 0) === 0 ? 'disabled' : ''} class="px-1.5 py-0.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 disabled:opacity-40 font-bold text-[9px]" title="RAZ Remise immédiate">RAZ</button>
@@ -3530,7 +3621,7 @@
                           `}
                         </td>
                         <td class="py-3 px-4">
-                          ${isMainAdmin ? '—' : `
+                          ${isComptaSystem ? '—' : `
                             <div class="flex items-center gap-1.5">
                               <span class="font-mono font-bold text-indigo-700">${formatEuro(u.soldeDiffere)}</span>
                               <button onclick="resetSingleUserSoldeDiffere('${u.id}')" ${Number(u.soldeDiffere || 0) === 0 ? 'disabled' : ''} class="px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-600 text-white disabled:bg-slate-100 disabled:text-slate-300 font-bold text-[10px]">
@@ -3541,7 +3632,7 @@
                         </td>
                         <td class="py-3 px-4 text-right">
                           <div class="flex items-center justify-end gap-1">
-                            ${!isMainAdmin ? `
+                            ${!isComptaSystem ? `
                               <button onclick="openAdminCreateTicketModal('${u.id}')" class="px-2 h-7 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1" title="Créer un ticket pour ce compte">
                                 <i class="fa-solid fa-plus"></i> Tck
                               </button>
@@ -3552,10 +3643,10 @@
                             <button onclick="openWelcomeCardModal('${u.id}')" class="w-7 h-7 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 flex items-center justify-center" title="Panonceau & envoi WhatsApp">
                               <i class="fa-brands fa-whatsapp text-sm"></i>
                             </button>
-                            <button onclick="openEditUserModal('${u.id}')" class="w-7 h-7 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 flex items-center justify-center" title="Modifier le compte">
+                            <button onclick="openEditUserModal('${u.id}')" class="w-7 h-7 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 flex items-center justify-center" title="Modifier le compte et le statut">
                               <i class="fa-solid fa-pen text-[11px]"></i>
                             </button>
-                            ${!isMainAdmin ? `
+                            ${!isComptaSystem ? `
                               <button onclick="openDeleteUserModal('${u.id}')" class="w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white flex items-center justify-center" title="Supprimer le compte">
                                 <i class="fa-solid fa-trash-can text-[11px]"></i>
                               </button>
@@ -3602,13 +3693,9 @@
       document.getElementById('editUserPassword').value = user.motDePasse || '';
 
       const roleAndBalanceBox = document.getElementById('editUserRoleAndBalanceBox');
-      if (user.role === 'ADMIN') {
-        roleAndBalanceBox.classList.add('hidden');
-      } else {
-        roleAndBalanceBox.classList.remove('hidden');
-        document.getElementById('editUserRole').value = user.role;
-        document.getElementById('editUserSolde').value = Number(user.soldeDiffere || 0).toFixed(2);
-      }
+      roleAndBalanceBox.classList.remove('hidden');
+      document.getElementById('editUserRole').value = user.role || 'SALARIE';
+      document.getElementById('editUserSolde').value = Number(user.soldeDiffere || 0).toFixed(2);
 
       document.getElementById('editUserModal').classList.remove('hidden');
     }
@@ -3641,29 +3728,32 @@
       user.telephone = document.getElementById('editUserTel').value.trim();
       user.motDePasse = newPassword;
 
-      if (user.role !== 'ADMIN') {
-        user.role = document.getElementById('editUserRole').value;
-        const newSolde = parseFloat(document.getElementById('editUserSolde').value);
-        if (!isNaN(newSolde) && newSolde >= 0) {
-          user.soldeDiffere = Number(newSolde.toFixed(2));
-        }
+      const selectedRole = document.getElementById('editUserRole').value;
+      if (['SALARIE', 'MANAGER', 'ADMIN'].includes(selectedRole)) {
+        user.role = selectedRole;
+        user.roleManuallyChangedByAdmin = true;
+      }
+
+      const newSolde = parseFloat(document.getElementById('editUserSolde').value);
+      if (!isNaN(newSolde) && newSolde >= 0) {
+        user.soldeDiffere = Number(newSolde.toFixed(2));
       }
 
       closeEditUserModal();
       syncUserToCloud(user);
-      showToast(`Compte de <strong>${user.prenom} ${user.nom}</strong> mis à jour.`, 'success');
+      showToast(`Compte de <strong>${user.prenom} ${user.nom}</strong> (${user.role}) mis à jour.`, 'success');
       renderApp();
     }
 
     function openDeleteUserModal(userId) {
       const user = getUserById(userId);
-      if (!user || user.role === 'ADMIN') return;
+      if (!user || isSystemComptaAccount(user)) return;
 
       document.getElementById('deleteUserIdInput').value = user.id;
       const validatedCount = state.tickets.filter(t => t.userId === user.id && t.status === 'VALIDE').length;
 
       document.getElementById('deleteUserSummaryBox').innerHTML = `
-        <div class="font-bold text-slate-900">${user.prenom} ${user.nom} (${user.rayon})</div>
+        <div class="font-bold text-slate-900">${user.prenom} ${user.nom} (${user.rayon} • ${user.role})</div>
         <div class="text-slate-500">Solde : ${formatEuro(user.soldeDiffere)} • ${validatedCount} ticket(s) validé(s)</div>
       `;
 
@@ -3678,7 +3768,7 @@
       event.preventDefault();
       const userId = document.getElementById('deleteUserIdInput').value;
       const user = getUserById(userId);
-      if (!user || user.role === 'ADMIN') return;
+      if (!user || isSystemComptaAccount(user)) return;
 
       const strategyRadio = document.querySelector('input[name="deleteTicketStrategy"]:checked');
       const strategy = strategyRadio ? strategyRadio.value : 'KEEP_VALIDATED';
@@ -3722,7 +3812,7 @@
       const email = document.getElementById('newUserEmail').value.trim();
       const motDePasse = document.getElementById('newUserPassword').value;
       const telephone = document.getElementById('newUserTel').value.trim();
-      const role = document.getElementById('newUserRole').value;
+      let role = document.getElementById('newUserRole').value;
       const soldeDiffere = parseFloat(document.getElementById('newUserSolde').value) || 0;
 
       const exists = state.users.some(u => u.email.trim().toLowerCase() === email.toLowerCase());
@@ -3731,9 +3821,15 @@
         return;
       }
 
+      // Si on crée Steve Feuillet (ou Patron), il passe automatiquement en ADMIN
+      if (isSteveFeuilletProfile({ prenom, nom, rayon })) {
+        role = 'ADMIN';
+      }
+
       const cycleYear = getCurrentFeb1stCycleYear();
+      const prefix = role === 'ADMIN' ? 'adm-' : role === 'MANAGER' ? 'mgr-' : 'emp-';
       const newUser = {
-        id: (role === 'MANAGER' ? 'mgr-' : 'emp-') + Date.now(),
+        id: prefix + Date.now(),
         nom,
         prenom,
         rayon,
@@ -3749,7 +3845,7 @@
 
       state.users.push(newUser);
       syncUserToCloud(newUser);
-      showToast(`Compte créé pour <strong>${prenom} ${nom}</strong>.`, 'success');
+      showToast(`Compte <strong>${role}</strong> créé pour <strong>${prenom} ${nom}</strong>.`, 'success');
       renderApp();
 
       openWelcomeCardModal(newUser.id);
@@ -3883,6 +3979,7 @@
       closeEditUserModal,
       openEditUserModal,
       submitEditUser,
+      changeUserRoleQuick,
       updateTicketFormCalculations,
       setQuickSpecialJustification,
       prefillExact10Percent,
