@@ -174,16 +174,13 @@
       </div>
 
       <form id="adminCreateTicketForm" onsubmit="submitAdminCreateTicket(event)" class="p-5 space-y-3.5">
-        <!-- Sélection du salarié -->
         <div>
           <label class="block text-xs font-bold text-slate-700 mb-1">Collaborateur concerné *</label>
           <select id="adminTicketTargetUser" required onchange="updateAdminCreateTicketPreview()" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"></select>
         </div>
 
-        <!-- Résumé des compteurs du salarié sélectionné -->
         <div id="adminCreateTicketUserStats" class="p-3 rounded-xl bg-slate-100 border border-slate-200 text-xs text-slate-700 flex flex-wrap items-center justify-between gap-2"></div>
 
-        <!-- Circuit Normal ou Hors Plafond -->
         <div class="grid grid-cols-2 gap-2">
           <label class="cursor-pointer">
             <input type="radio" name="adminTicketCircuit" value="STANDARD" checked onchange="updateAdminCreateTicketPreview()" class="peer sr-only">
@@ -201,7 +198,6 @@
           </label>
         </div>
 
-        <!-- Montant des courses & Mode de remise -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1">Courses avant remise (€) *</label>
@@ -217,7 +213,6 @@
           </div>
         </div>
 
-        <!-- Montant remise ou solde déduit -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div id="adminCreateRemiseGroup">
             <div class="flex items-center justify-between mb-1">
@@ -241,12 +236,10 @@
           </div>
         </div>
 
-        <!-- Aperçu impact financier -->
         <div id="adminCreateTicketFeedback" class="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600">
           Saisissez le montant des courses pour calculer l'impact.
         </div>
 
-        <!-- Photo optionnelle -->
         <div>
           <label class="cursor-pointer flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-slate-300 hover:border-indigo-500 hover:bg-indigo-50/40 transition text-xs font-bold text-slate-700">
             <i class="fa-solid fa-camera text-indigo-600"></i>
@@ -281,13 +274,11 @@
       <div class="p-5 space-y-4">
         <input type="hidden" id="welcomeCardUserId">
 
-        <!-- Lien du site personnalisable -->
         <div>
           <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Lien du site à inclure dans le panonceau</label>
           <input type="url" id="welcomeCardSiteUrl" oninput="refreshWelcomeCardPreview()" class="w-full rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-mono text-indigo-700 focus:ring-2 focus:ring-indigo-500 outline-none">
         </div>
 
-        <!-- Visuel du Panonceau -->
         <div class="p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-indigo-950 text-white shadow-md border border-indigo-500/30 space-y-3">
           <div class="flex items-center justify-between border-b border-white/10 pb-2.5">
             <div class="flex items-center gap-2">
@@ -312,13 +303,11 @@
           </div>
         </div>
 
-        <!-- Texte prêt à copier / envoyer -->
         <div>
           <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Aperçu du message (Copier / WhatsApp)</label>
           <textarea id="welcomeCardRawText" rows="6" readonly class="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs font-mono text-slate-700 outline-none"></textarea>
         </div>
 
-        <!-- Boutons d'action : Copier & WhatsApp -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
           <button type="button" onclick="copyWelcomeCardText()" class="py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition flex items-center justify-center gap-2 shadow-sm">
             <i class="fa-regular fa-copy"></i>
@@ -617,8 +606,42 @@
     let isCloudConnected = false;
     let initialSeedInProgress = false;
 
+    /* UTILITAIRES DE DATES ET MOIS (HEURE LOCALE) */
+    function getMonthKeyFromTimestamp(ts) {
+      const d = new Date(ts || Date.now());
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    function getCurrentMonthKey() {
+      return getMonthKeyFromTimestamp(Date.now());
+    }
+
+    function formatMonthKeyFr(monthKey) {
+      if (!monthKey || !monthKey.includes('-')) return monthKey;
+      const [year, month] = monthKey.split('-').map(Number);
+      const date = new Date(year, month - 1, 1);
+      const label = date.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+      return label.charAt(0).toUpperCase() + label.slice(1);
+    }
+
+    function getLast12MonthsKeys() {
+      const keys = [];
+      const now = new Date();
+      for (let i = 0; i < 12; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        keys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+      }
+      return keys;
+    }
+
+    function getCurrentFebCycleYear() {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = now.getMonth(); // 0 = Janvier, 1 = Février
+      return m >= 1 ? y : y - 1;
+    }
+
     function getDefaultUsers() {
-      const currentYear = new Date().getFullYear();
       return [
         {
           id: 'admin-1',
@@ -631,7 +654,8 @@
           role: 'ADMIN',
           remiseUtiliseeMois: 0.00,
           soldeDiffere: 0.00,
-          anneeSoldeDiffere: currentYear
+          cycleFevrierSolde: getCurrentFebCycleYear(),
+          launchReset2026Done: true
         }
       ];
     }
@@ -649,41 +673,65 @@
       tickets: []
     };
 
-    /* ==================== RAZ ANNUELLE AU 1ER FÉVRIER ==================== */
+    /* ==================== RAZ AUTOMATIQUE AU 1ER FÉVRIER & RAZ LANCEMENT ==================== */
     function checkAndApplyAnnualFeb1stReset() {
-      const now = new Date();
-      const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth(); // 0 = Janvier, 1 = Février
-      const periodYear = currentMonth >= 1 ? currentYear : currentYear - 1;
-      let resetCount = 0;
+      const currentCycleYear = getCurrentFebCycleYear();
+      let resetFebCount = 0;
+      let launchResetCount = 0;
 
       state.users.forEach(u => {
         if (u.role === 'ADMIN') {
-          if (!u.anneeSoldeDiffere) u.anneeSoldeDiffere = periodYear;
+          if (!u.cycleFevrierSolde) u.cycleFevrierSolde = currentCycleYear;
           return;
         }
-        if (!u.anneeSoldeDiffere || Number(u.anneeSoldeDiffere) < periodYear) {
-          if (Number(u.soldeDiffere || 0) > 0) resetCount++;
+
+        let modified = false;
+
+        // 1. Remise à zéro automatique pour le lancement (une seule fois par compte existant)
+        if (!u.launchReset2026Done) {
+          u.remiseUtiliseeMois = 0.00;
           u.soldeDiffere = 0.00;
-          u.anneeSoldeDiffere = periodYear;
+          u.cycleFevrierSolde = currentCycleYear;
+          u.launchReset2026Done = true;
+          launchResetCount++;
+          modified = true;
+        }
+
+        // 2. Remise à zéro automatique chaque 1er Février
+        const userCycle = Number(u.cycleFevrierSolde || 0);
+        if (userCycle > 0 && userCycle < currentCycleYear) {
+          if (Number(u.soldeDiffere || 0) > 0) resetFebCount++;
+          u.soldeDiffere = 0.00;
+          u.cycleFevrierSolde = currentCycleYear;
+          modified = true;
+        } else if (!u.cycleFevrierSolde) {
+          u.cycleFevrierSolde = currentCycleYear;
+          modified = true;
+        }
+
+        if (modified) {
           syncUserToCloud(u);
         }
       });
 
-      if (resetCount > 0) {
-        showToast(`🗓️ <strong>1er Février :</strong> ${resetCount} solde(s) différé(s) remis à 0 €.`, 'info');
+      if (launchResetCount > 0) {
+        showToast(`🚀 <strong>Lancement initialisé :</strong> ${launchResetCount} compte(s) salarié(s) remis à 0,00 € (remise + cagnotte).`, 'success');
+      }
+      if (resetFebCount > 0) {
+        showToast(`🗓️ <strong>Échéance 1er Février :</strong> ${resetFebCount} solde(s) différé(s) remis automatiquement à 0,00 €.`, 'info');
       }
     }
 
-    /* ==================== RAZ INITIALISATION (LANCEMENT) ==================== */
     function launchTotalReset() {
-      if (!confirm('⚠️ ATTENTION : Voulez-vous vraiment TOUT remettre à zéro pour le lancement ?\n\nCela va :\n1. Remettre la remise (50€) et le solde différé de TOUS les salariés à 0 €\n2. Supprimer définitivement TOUS les tickets de test enregistrés\n\nCette action est IRRÉVERSIBLE.')) return;
+      if (!confirm('⚠️ Confirmation RAZ Lancement :\n\nVoulez-vous remettre tous les comptes salariés à 0,00 € (remise immédiate + solde différé) et supprimer les tickets de test ?')) return;
 
+      const currentCycleYear = getCurrentFebCycleYear();
       state.users.forEach(u => {
         if (u.role !== 'ADMIN') {
           u.remiseUtiliseeMois = 0.00;
           u.soldeDiffere = 0.00;
-          u.anneeSoldeDiffere = new Date().getFullYear();
+          u.cycleFevrierSolde = currentCycleYear;
+          u.launchReset2026Done = true;
           syncUserToCloud(u);
         }
       });
@@ -691,7 +739,7 @@
       state.tickets.forEach(t => deleteTicketFromCloud(t.id));
       state.tickets = [];
 
-      showToast('🚀 Initialisation de lancement : Tous les compteurs sont à 0 et tickets supprimés.', 'success');
+      showToast('🚀 Tous les comptes salariés (remise + cagnotte) et les tickets ont été remis à zéro.', 'success');
       renderApp();
     }
 
@@ -1176,7 +1224,7 @@
       const pctUsed = Math.min(100, (user.remiseUtiliseeMois / MONTHLY_CAP) * 100);
       const rawPct = (user.remiseUtiliseeMois / MONTHLY_CAP) * 100;
       
-      // Strictement réservé aux tickets de l'utilisateur connecté :
+      // Strictement réservé aux tickets du compte connecté (le manager ne voit jamais les tickets des autres ici)
       const userTickets = state.tickets
         .filter(t => t.userId === user.id)
         .sort((a, b) => b.createdAt - a.createdAt);
@@ -1244,10 +1292,11 @@
               </span>
             </div>
             <div class="text-3xl font-extrabold font-mono mt-3 text-white">${formatEuro(user.soldeDiffere)}</div>
+            <div class="text-[10px] text-indigo-300 mt-2"><i class="fa-regular fa-calendar mr-1"></i>Remise à zéro annuelle au 1er février</div>
           </div>
         </div>
 
-        <!-- Formulaire & Historique -->
+        <!-- Formulaire & Historique personnel -->
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
           <div class="lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
             <div class="px-5 py-3.5 bg-slate-900 text-white flex items-center gap-2">
@@ -1395,10 +1444,10 @@
             </form>
           </div>
 
-          <!-- Historique personnel -->
+          <!-- Historique personnel (strictement celui du salarié connecté) -->
           <div class="lg:col-span-5 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
             <div class="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
-              <h3 class="font-bold text-sm text-slate-900">Mes Tickets</h3>
+              <h3 class="font-bold text-sm text-slate-900">Mes Tickets Personnels</h3>
               <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700">${userTickets.length}</span>
             </div>
 
@@ -1406,7 +1455,7 @@
               ${userTickets.length === 0 ? `
                 <div class="text-center py-10 text-slate-400">
                   <i class="fa-solid fa-receipt text-2xl mb-1.5"></i>
-                  <p class="text-xs">Aucun ticket soumis.</p>
+                  <p class="text-xs">Aucun ticket personnel soumis.</p>
                 </div>
               ` : userTickets.map(t => renderSingleTicketCardForOwner(t)).join('')}
             </div>
@@ -1941,17 +1990,18 @@
         }
       }
 
-      owner.anneeSoldeDiffere = new Date().getFullYear();
+      owner.cycleFevrierSolde = getCurrentFebCycleYear();
+      owner.launchReset2026Done = true;
       syncUserToCloud(owner);
       syncTicketToCloud(ticket);
     }
 
-    /* VUE MANAGER */
+    /* ==================== VUE MANAGER (SANS ACCÈS À L'HISTORIQUE DES AUTRES COMPTES) ==================== */
     function renderManagerView() {
       const user = getCurrentUser();
       const container = document.getElementById('viewManager');
       
-      // Strictement réservé aux tickets en attente
+      // Strictement les tickets en cours d'attente (< 10 min) : aucun historique des autres comptes n'est accessible
       const waitingTickets = state.tickets
         .filter(t => t.status === 'EN_ATTENTE_MANAGER')
         .sort((a, b) => a.expiresAt - b.expiresAt);
@@ -1966,9 +2016,10 @@
             </button>
             <button onclick="setManagerTab('PERSONAL')" class="px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${state.managerActiveTab === 'PERSONAL' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}">
               <i class="fa-solid fa-user-tag"></i>
-              <span>Mon Espace & Cagnotte</span>
+              <span>Mon Espace Personnel</span>
             </button>
           </div>
+          <span class="text-[11px] text-slate-400 px-2"><i class="fa-solid fa-shield-halved mr-1"></i>Confidentialité active : seuls les tickets en attente (&lt; 10 min) et vos propres tickets sont visibles.</span>
         </div>
 
         ${state.managerActiveTab === 'QUEUE' ? renderManagerQueueHTML(waitingTickets) : buildPersonalSpaceHTML(user)}
@@ -1992,7 +2043,8 @@
             <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-3 text-xl">
               <i class="fa-solid fa-check-double"></i>
             </div>
-            <h3 class="text-sm font-bold text-slate-900">Aucun ticket en attente</h3>
+            <h3 class="text-sm font-bold text-slate-900">Aucun ticket en attente de validation</h3>
+            <p class="text-xs text-slate-400 mt-1">L'historique des tickets traités des autres collaborateurs est réservé à l'Administrateur.</p>
           </div>
         `;
       }
@@ -2019,7 +2071,7 @@
                     <div class="flex items-start justify-between gap-3">
                       <div>
                         <h4 class="font-bold text-sm text-slate-900">${emp ? emp.prenom + ' ' + emp.nom : 'Salarié'}</h4>
-                        <p class="text-xs text-slate-500">${emp ? emp.rayon : '-'} • Remise immédiate : <strong>${emp ? formatEuro(emp.remiseUtiliseeMois) : '0 €'}/50€</strong> • Solde : <strong class="text-indigo-700">${emp ? formatEuro(emp.soldeDiffere) : '0 €'}</strong></p>
+                        <p class="text-xs text-slate-500">${emp ? emp.rayon : '-'}</p>
                       </div>
                       <button onclick="openReceiptModal('${ticket.id}')" class="px-2.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold flex items-center gap-1">
                         <i class="fa-solid fa-image"></i> Photo
@@ -2127,9 +2179,13 @@
     }
 
     /* ==================== VUE ADMINISTRATEUR ==================== */
+    function isTicketToProcessByAdmin(status) {
+      return status === 'DEMANDE_SPECIALE_ADMIN' || status === 'REFUSE_PAR_MANAGER' || status === 'EXPIRE_VERS_ADMIN';
+    }
+
     function renderAdminView() {
       const container = document.getElementById('viewAdmin');
-      const urgentTickets = state.tickets.filter(t => t.status === 'EXPIRE_VERS_ADMIN' || t.status === 'REFUSE_PAR_MANAGER' || t.status === 'DEMANDE_SPECIALE_ADMIN');
+      const urgentTickets = state.tickets.filter(t => isTicketToProcessByAdmin(t.status));
 
       container.innerHTML = `
         <!-- Barre Navigation Admin -->
@@ -2137,24 +2193,30 @@
           <div class="flex flex-wrap gap-1.5">
             <button onclick="setAdminTab('DASHBOARD')" class="px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${state.adminActiveTab === 'DASHBOARD' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}">
               <i class="fa-solid fa-table-list"></i>
-              <span>Tableau de Bord</span>
+              <span>Tableau de Bord Salariés</span>
             </button>
             <button onclick="setAdminTab('TICKETS')" class="px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${state.adminActiveTab === 'TICKETS' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}">
               <i class="fa-solid fa-folder-tree"></i>
-              <span>Tickets & Arbitrage</span>
-              ${urgentTickets.length > 0 ? `<span class="px-1.5 py-0.5 rounded-full text-[10px] bg-rose-500 text-white">${urgentTickets.length}</span>` : ''}
+              <span>Tickets par Salarié</span>
+              ${urgentTickets.length > 0 ? `<span class="px-1.5 py-0.5 rounded-full text-[10px] bg-rose-500 text-white animate-pulse">${urgentTickets.length}</span>` : ''}
             </button>
             <button onclick="setAdminTab('USERS')" class="px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${state.adminActiveTab === 'USERS' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}">
               <i class="fa-solid fa-users-gear"></i>
-              <span>Comptes Salariés (${state.users.filter(u=>u.role!=='ADMIN').length})</span>
+              <span>Comptes (${state.users.length})</span>
             </button>
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
             <button onclick="openAdminCreateTicketModal()" class="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
-              <i class="fa-solid fa-plus"></i> Forcer un ticket
+              <i class="fa-solid fa-plus"></i> Créer un ticket salarié
             </button>
-            <button onclick="launchTotalReset()" class="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white border border-rose-700 text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
+            <button onclick="resetAllDeferredBalancesAnnual()" class="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold transition flex items-center gap-1.5" title="RAZ automatique chaque 1er février">
+              <i class="fa-solid fa-rotate-left text-amber-600"></i> RAZ Soldes (1er Fév)
+            </button>
+            <button onclick="resetMonthlyGauges()" class="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold transition flex items-center gap-1.5">
+              <i class="fa-solid fa-calendar-check"></i> RAZ Remises (50€)
+            </button>
+            <button onclick="launchTotalReset()" class="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm" title="Remet tous les comptes (remise + cagnotte) à 0 et purge les tickets">
               <i class="fa-solid fa-rocket"></i> RAZ Lancement
             </button>
           </div>
@@ -2209,7 +2271,7 @@
       }
 
       user.soldeDiffere = 0.00;
-      user.anneeSoldeDiffere = new Date().getFullYear();
+      user.cycleFevrierSolde = getCurrentFebCycleYear();
       syncUserToCloud(user);
       showToast(`Solde différé de <strong>${user.prenom} ${user.nom}</strong> remis à 0 €.`, 'success');
       renderApp();
@@ -2225,11 +2287,11 @@
     }
 
     function resetAllDeferredBalancesAnnual() {
-      const currentYear = new Date().getFullYear();
+      const currentCycleYear = getCurrentFebCycleYear();
       state.users.forEach(u => {
         if (u.role !== 'ADMIN') {
           u.soldeDiffere = 0.00;
-          u.anneeSoldeDiffere = currentYear;
+          u.cycleFevrierSolde = currentCycleYear;
           syncUserToCloud(u);
         }
       });
@@ -2237,25 +2299,35 @@
       renderApp();
     }
 
-    /* TABLEAU DE BORD ADMIN : FILTRÉ PAR MOIS */
+    /* ==================== TABLEAU DE BORD ADMIN : FILTRABLE TOTAL / MOIS EN COURS / MOIS PASSÉS ==================== */
     function renderAdminDashboardHTML() {
       const validatedTickets = state.tickets.filter(t => t.status === 'VALIDE');
       const eligibleUsers = state.users
         .filter(u => u.role !== 'ADMIN')
         .sort((a, b) => `${a.nom} ${a.prenom}`.localeCompare(`${b.nom} ${b.prenom}`, 'fr'));
 
-      const availableMonthsRaw = [...new Set(state.tickets.map(t => new Date(t.createdAt).toISOString().substring(0,7)))];
-      const availableMonths = availableMonthsRaw.sort((a,b) => b.localeCompare(a));
-      const currentMonthKey = new Date().toISOString().substring(0,7);
-      
-      if(!state.adminDashboardMonth) state.adminDashboardMonth = 'CURRENT';
-      
-      const filterMonth = state.adminDashboardMonth === 'CURRENT' ? currentMonthKey : state.adminDashboardMonth;
-      const isTotal = state.adminDashboardMonth === 'TOTAL';
+      const currentMonthKey = getCurrentMonthKey();
+      const last12Months = getLast12MonthsKeys();
+      const ticketMonths = state.tickets.map(t => getMonthKeyFromTimestamp(t.createdAt));
+      const allMonthKeys = [...new Set([...last12Months, ...ticketMonths])].sort((a, b) => b.localeCompare(a));
+      const pastMonthKeys = allMonthKeys.filter(m => m !== currentMonthKey);
 
+      if (!state.adminDashboardMonth) state.adminDashboardMonth = 'CURRENT';
+
+      const isTotal = state.adminDashboardMonth === 'TOTAL';
+      const isCurrentMonth = state.adminDashboardMonth === 'CURRENT' || state.adminDashboardMonth === currentMonthKey;
+      const targetMonthKey = isCurrentMonth ? currentMonthKey : state.adminDashboardMonth;
+
+      const periodLabel = isTotal
+        ? 'Total cumulé (Tous les mois)'
+        : isCurrentMonth
+          ? `Mois en cours (${formatMonthKeyFr(currentMonthKey)})`
+          : `Mois passé : ${formatMonthKeyFr(targetMonthKey)}`;
+
+      // Tickets validés correspondant à la période choisie
       const filteredValidatedTickets = validatedTickets.filter(t => {
-          if (isTotal) return true;
-          return new Date(t.createdAt).toISOString().substring(0,7) === filterMonth;
+        if (isTotal) return true;
+        return getMonthKeyFromTimestamp(t.createdAt) === targetMonthKey;
       });
 
       const searchQuery = (state.adminDashboardSearch || '').trim().toLowerCase();
@@ -2264,94 +2336,118 @@
         return `${u.prenom} ${u.nom} ${u.rayon} ${u.email} ${u.telephone}`.toLowerCase().includes(searchQuery);
       });
 
-      // Calcul des totaux basés STRICTEMENT sur les tickets de la période sélectionnée
+      // Calcul des 5 grands compteurs selon la période choisie
       const sumCoursesValidated = filteredValidatedTickets.reduce((acc, t) => acc + Number(t.montantCourses || 0), 0);
-      
-      // L'utilisation de la remise est calculée via les tickets pour l'historique, mais on permet de voir la gauge modifiable pour CURRENT/TOTAL
-      const totalDiscountUsedStore = (isTotal || filterMonth !== currentMonthKey)
-        ? filteredValidatedTickets.filter(t => t.typeRemise === 'DIRECT').reduce((acc, t) => acc + Number(t.montantRemise || 0), 0)
-        : eligibleUsers.reduce((acc, u) => acc + Number(u.remiseUtiliseeMois || 0), 0);
 
-      // Le solde différé dispo est toujours le snapshot "actuel" car c'est une cagnotte
-      const totalSoldeDiffereStore = eligibleUsers.reduce((acc, u) => acc + Number(u.soldeDiffere || 0), 0);
-      
-      const totalSoldeDiffereUtiliseStore = filteredValidatedTickets
-        .filter(t => t.typeRemise === 'DIFFERE_UTILISATION')
-        .reduce((acc, t) => acc + Number(t.montantSoldeUtilise || 0), 0);
-      const totalDiffereCumuleStore = filteredValidatedTickets
+      const totalDiscountUsedPeriod = isCurrentMonth
+        ? eligibleUsers.reduce((acc, u) => acc + Number(u.remiseUtiliseeMois || 0), 0)
+        : filteredValidatedTickets.reduce((acc, t) => acc + Number(t.montantRemise || 0), 0);
+
+      const totalDiffereCumulePeriod = filteredValidatedTickets
         .filter(t => t.typeRemise === 'DIFFERE_CUMUL')
         .reduce((acc, t) => acc + Number(t.montantRemise || 0), 0);
 
-      const urgentTickets = state.tickets.filter(t => t.status === 'EXPIRE_VERS_ADMIN' || t.status === 'REFUSE_PAR_MANAGER' || t.status === 'DEMANDE_SPECIALE_ADMIN');
+      const totalSoldeDiffereUtilisePeriod = filteredValidatedTickets
+        .filter(t => t.typeRemise === 'DIFFERE_UTILISATION')
+        .reduce((acc, t) => acc + Number(t.montantSoldeUtilise || 0), 0);
+
+      const totalSoldeDiffereStore = eligibleUsers.reduce((acc, u) => acc + Number(u.soldeDiffere || 0), 0);
+
+      const urgentTickets = state.tickets.filter(t => isTicketToProcessByAdmin(t.status));
 
       return `
         ${urgentTickets.length > 0 ? `
           <div class="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-between gap-3">
             <div class="flex items-center gap-2.5">
               <span class="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center text-xs"><i class="fa-solid fa-bell"></i></span>
-              <span class="text-xs font-bold text-rose-950">${urgentTickets.length} ticket(s) en attente d'arbitrage Admin</span>
+              <span class="text-xs font-bold text-rose-950">${urgentTickets.length} demande(s) en attente d'arbitrage Admin</span>
             </div>
             <button onclick="setAdminTab('TICKETS'); setAdminTicketFilter('URGENT');" class="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold">
-              Traiter maintenant →
+              Traiter en priorité →
             </button>
           </div>
         ` : ''}
 
-        <!-- 5 Compteurs globaux filtrés -->
+        <!-- BARRE DE SÉLECTION DE PÉRIODE (MOIS EN COURS / MOIS PASSÉS / TOTAL) -->
+        <div class="bg-white p-3.5 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div class="flex items-center gap-2">
+            <span class="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs font-bold">
+              <i class="fa-regular fa-calendar-days"></i>
+            </span>
+            <div>
+              <div class="text-xs font-bold text-slate-900">Vision des données : <span class="text-indigo-600">${periodLabel}</span></div>
+              <div class="text-[11px] text-slate-500">Basculez entre le mois en cours, un mois passé ou le total cumulé.</div>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="handleAdminMonthChange('CURRENT')" class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition ${isCurrentMonth ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}">
+              <i class="fa-solid fa-calendar-day mr-1"></i> Mois en cours (${formatMonthKeyFr(currentMonthKey)})
+            </button>
+
+            <button onclick="handleAdminMonthChange('TOTAL')" class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition ${isTotal ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}">
+              <i class="fa-solid fa-layer-group mr-1"></i> Total cumulé
+            </button>
+
+            <select onchange="handleAdminMonthChange(this.value)" class="rounded-xl border ${!isCurrentMonth && !isTotal ? 'border-indigo-600 bg-indigo-50 text-indigo-900' : 'border-slate-300 bg-slate-50 text-slate-800'} px-3 py-1.5 text-xs font-bold outline-none cursor-pointer">
+              <option value="CURRENT" ${isCurrentMonth || isTotal ? 'selected' : ''} disabled>📂 Choisir un mois passé...</option>
+              ${pastMonthKeys.map(m => `
+                <option value="${m}" ${state.adminDashboardMonth === m ? 'selected' : ''}>
+                  📅 ${formatMonthKeyFr(m)}
+                </option>
+              `).join('')}
+            </select>
+          </div>
+        </div>
+
+        <!-- 5 Compteurs globaux de la période -->
         <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-            <div class="text-[11px] font-bold text-slate-400 uppercase">Total Courses Validées</div>
+            <div class="text-[11px] font-bold text-slate-400 uppercase">Total Courses (${isTotal ? 'Total' : formatMonthKeyFr(targetMonthKey)})</div>
             <div class="text-xl font-extrabold font-mono text-slate-900 mt-1">${formatEuro(sumCoursesValidated)}</div>
-            <div class="text-[11px] text-slate-400 mt-0.5">${filteredValidatedTickets.length} ticket(s)</div>
+            <div class="text-[11px] text-slate-400 mt-0.5">${filteredValidatedTickets.length} ticket(s) validé(s)</div>
           </div>
 
           <div class="bg-white p-4 rounded-2xl shadow-sm border border-indigo-200">
-            <div class="text-[11px] font-bold text-indigo-700 uppercase">Remises Immédiates</div>
-            <div class="text-xl font-extrabold font-mono text-indigo-700 mt-1">${formatEuro(totalDiscountUsedStore)}</div>
-            <div class="text-[11px] text-slate-400 mt-0.5">Sur la période choisie</div>
+            <div class="text-[11px] font-bold text-indigo-700 uppercase">Remises Consommées</div>
+            <div class="text-xl font-extrabold font-mono text-indigo-700 mt-1">${formatEuro(totalDiscountUsedPeriod)}</div>
+            <div class="text-[11px] text-slate-400 mt-0.5">${isCurrentMonth ? 'Jauge mensuelle en cours' : 'Sur la période sélectionnée'}</div>
           </div>
 
           <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
             <div class="text-[11px] font-bold text-slate-400 uppercase">Différé Cumulé (+10%)</div>
-            <div class="text-xl font-extrabold font-mono text-slate-900 mt-1">${formatEuro(totalDiffereCumuleStore)}</div>
-            <div class="text-[11px] text-slate-400 mt-0.5">Cagnoté sur la période</div>
+            <div class="text-xl font-extrabold font-mono text-slate-900 mt-1">${formatEuro(totalDiffereCumulePeriod)}</div>
+            <div class="text-[11px] text-slate-400 mt-0.5">Mis en cagnotte (${isTotal ? 'Total' : 'Mois'})</div>
           </div>
 
           <div class="bg-white p-4 rounded-2xl shadow-sm border border-emerald-200">
             <div class="text-[11px] font-bold text-emerald-700 uppercase">Solde Différé Utilisé</div>
-            <div class="text-xl font-extrabold font-mono text-emerald-600 mt-1">${formatEuro(totalSoldeDiffereUtiliseStore)}</div>
-            <div class="text-[11px] text-slate-400 mt-0.5">Déduit sur la période</div>
+            <div class="text-xl font-extrabold font-mono text-emerald-600 mt-1">${formatEuro(totalSoldeDiffereUtilisePeriod)}</div>
+            <div class="text-[11px] text-slate-400 mt-0.5">Déduit en caisse (${isTotal ? 'Total' : 'Mois'})</div>
           </div>
 
           <div class="bg-white p-4 rounded-2xl shadow-sm border border-amber-200 col-span-2 sm:col-span-1">
-            <div class="text-[11px] font-bold text-amber-800 uppercase">Solde Différé Actuel</div>
+            <div class="text-[11px] font-bold text-amber-800 uppercase">Cagnotte Dispo Actuelle</div>
             <div class="text-xl font-extrabold font-mono text-amber-700 mt-1">${formatEuro(totalSoldeDiffereStore)}</div>
-            <div class="text-[11px] text-slate-400 mt-0.5">Restant global à utiliser</div>
+            <div class="text-[11px] text-slate-400 mt-0.5">RAZ auto le 1er février</div>
           </div>
         </div>
 
+        <!-- TABLEAU DE PILOTAGE INDIVIDUEL PAR SALARIÉ -->
         <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          <div class="px-5 py-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div class="px-5 py-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 class="font-bold text-sm text-slate-900 flex items-center gap-2">
                 <i class="fa-solid fa-table text-indigo-600"></i>
-                <span>Tableau de Pilotage Individuel</span>
+                <span>Tableau de Pilotage par Salarié — ${periodLabel} (${filteredUsers.length})</span>
               </h3>
-              <p class="text-xs text-slate-500 mt-0.5">Données calculées en fonction de la période sélectionnée.</p>
+              <p class="text-xs text-slate-500 mt-0.5">Suivi détaillé des remises, cagnottes différées et tickets sur la période sélectionnée.</p>
             </div>
 
-            <div class="flex flex-wrap items-center gap-2">
-              <select onchange="handleAdminMonthChange(this.value)" class="rounded-xl border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-900 outline-none w-48">
-                <option value="CURRENT" ${state.adminDashboardMonth === 'CURRENT' ? 'selected' : ''}>📅 Mois en cours</option>
-                <option value="TOTAL" ${state.adminDashboardMonth === 'TOTAL' ? 'selected' : ''}>📊 Tous les mois (Total)</option>
-                <optgroup label="Historique">
-                  ${availableMonths.map(m => `<option value="${m}" ${state.adminDashboardMonth === m ? 'selected' : ''}>Mois : ${m}</option>`).join('')}
-                </optgroup>
-              </select>
-
+            <div class="flex items-center gap-2">
               <div class="relative">
                 <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
-                <input type="text" id="adminDashboardSearchInput" value="${state.adminDashboardSearch || ''}" oninput="handleAdminDashboardSearch(this.value)" placeholder="Rechercher salarié..." class="rounded-xl border border-slate-300 pl-8 pr-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-500 w-48">
+                <input type="text" id="adminDashboardSearchInput" value="${state.adminDashboardSearch || ''}" oninput="handleAdminDashboardSearch(this.value)" placeholder="Rechercher salarié, rayon..." class="rounded-xl border border-slate-300 pl-8 pr-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-500 w-56">
               </div>
             </div>
           </div>
@@ -2362,13 +2458,13 @@
                 <tr class="bg-slate-900 text-white text-[10px] font-bold uppercase tracking-wider">
                   <th class="py-3 px-4">Salarié & Coordonnées</th>
                   <th class="py-3 px-3">Rayon / Rôle</th>
-                  <th class="py-3 px-3 text-center">Tickets</th>
-                  <th class="py-3 px-3 text-right">Total Courses</th>
-                  <th class="py-3 px-4">Remise immédiate (Max 50€)</th>
+                  <th class="py-3 px-3 text-center">Tickets (${isTotal ? 'Total' : 'Mois'})</th>
+                  <th class="py-3 px-3 text-right">Courses (${isTotal ? 'Total' : 'Mois'})</th>
+                  <th class="py-3 px-4">${isTotal ? 'Remises Cumulées' : 'Remise Mois (Max 50€)'}</th>
                   <th class="py-3 px-3 text-right">Remise Directe Caisse</th>
                   <th class="py-3 px-3 text-right">Différé Cumulé</th>
                   <th class="py-3 px-3 text-right">Différé Utilisé</th>
-                  <th class="py-3 px-3 text-right">Solde Différé Dispo</th>
+                  <th class="py-3 px-3 text-right">Cagnotte Dispo</th>
                   <th class="py-3 px-4 text-right">Actions Rapides</th>
                 </tr>
               </thead>
@@ -2382,72 +2478,98 @@
                 ` : filteredUsers.map(u => {
                   const userAllTickets = state.tickets.filter(t => t.userId === u.id);
                   const userValidTickets = userAllTickets.filter(t => t.status === 'VALIDE');
-                  const userPendingTickets = userAllTickets.filter(t => t.status === 'EN_ATTENTE_MANAGER' || t.status === 'EXPIRE_VERS_ADMIN' || t.status === 'REFUSE_PAR_MANAGER' || t.status === 'DEMANDE_SPECIALE_ADMIN');
+                  const userPendingTickets = userAllTickets.filter(t => t.status === 'EN_ATTENTE_MANAGER' || isTicketToProcessByAdmin(t.status));
 
-                  // Filtre par mois strict pour le tableau
-                  const ticketsInScope = userValidTickets.filter(t => {
-                      if (isTotal) return true;
-                      return new Date(t.createdAt).toISOString().substring(0,7) === filterMonth;
+                  const periodTickets = userValidTickets.filter(t => {
+                    if (isTotal) return true;
+                    return getMonthKeyFromTimestamp(t.createdAt) === targetMonthKey;
                   });
 
-                  const totalCoursesUser = ticketsInScope.reduce((s, t) => s + Number(t.montantCourses || 0), 0);
-                  const totalRemiseDirecteUser = ticketsInScope.filter(t => t.typeRemise === 'DIRECT').reduce((s, t) => s + Number(t.montantRemise || 0), 0);
-                  const totalDiffereCumulUser = ticketsInScope.filter(t => t.typeRemise === 'DIFFERE_CUMUL').reduce((s, t) => s + Number(t.montantRemise || 0), 0);
-                  const totalDiffereUtiliseUser = ticketsInScope.filter(t => t.typeRemise === 'DIFFERE_UTILISATION').reduce((s, t) => s + Number(t.montantSoldeUtilise || 0), 0);
+                  const totalCoursesUser = periodTickets.reduce((s, t) => s + Number(t.montantCourses || 0), 0);
+                  const totalRemiseDirecteUser = periodTickets
+                    .filter(t => t.typeRemise === 'DIRECT')
+                    .reduce((s, t) => s + Number(t.montantRemise || 0), 0);
+                  const totalDiffereCumulUser = periodTickets
+                    .filter(t => t.typeRemise === 'DIFFERE_CUMUL')
+                    .reduce((s, t) => s + Number(t.montantRemise || 0), 0);
+                  const totalDiffereUtiliseUser = periodTickets
+                    .filter(t => t.typeRemise === 'DIFFERE_UTILISATION')
+                    .reduce((s, t) => s + Number(t.montantSoldeUtilise || 0), 0);
 
-                  // Affichage gauge : si on est sur le mois actuel, on affiche sa donnée de profil u.remiseUtiliseeMois
-                  // Si on est sur un mois passé, on affiche strictement la somme des remises immédiates de ce mois
-                  const displayedImmediate = (state.adminDashboardMonth === 'CURRENT' || isTotal) ? u.remiseUtiliseeMois : totalRemiseDirecteUser;
-                  const remainingImmediate = Math.max(0, Number((MONTHLY_CAP - displayedImmediate).toFixed(2)));
-                  const pctImmediate = Math.min(100, (displayedImmediate / MONTHLY_CAP) * 100);
-                  const isOverCap = displayedImmediate > MONTHLY_CAP;
+                  const periodRemiseUsed = isCurrentMonth
+                    ? Number(u.remiseUtiliseeMois || 0)
+                    : Number((totalRemiseDirecteUser + totalDiffereCumulUser).toFixed(2));
+
+                  const remainingImmediate = Math.max(0, Number((MONTHLY_CAP - periodRemiseUsed).toFixed(2)));
+                  const pctImmediate = Math.min(100, (periodRemiseUsed / MONTHLY_CAP) * 100);
+                  const isOverCap = periodRemiseUsed > MONTHLY_CAP;
 
                   return `
                     <tr class="hover:bg-slate-50/90 transition">
                       <td class="py-3 px-4">
                         <div class="font-bold text-slate-900">${u.prenom} ${u.nom}</div>
                         <div class="text-[11px] text-slate-500 font-mono">${u.email}</div>
+                        <div class="text-[11px] text-slate-400">${u.telephone}</div>
                       </td>
+
                       <td class="py-3 px-3">
                         <div class="font-semibold text-slate-800">${u.rayon}</div>
                         <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-bold ${u.role === 'MANAGER' ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}">${u.role}</span>
                       </td>
+
                       <td class="py-3 px-3 text-center">
-                        <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800" title="Tickets validés période">${ticketsInScope.length} val.</span>
+                        <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">${periodTickets.length} val.</span>
+                        ${userPendingTickets.length > 0 ? `
+                          <div class="mt-1">
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">${userPendingTickets.length} att.</span>
+                          </div>
+                        ` : ''}
                       </td>
+
                       <td class="py-3 px-3 text-right font-mono font-bold text-slate-900">
                         ${formatEuro(totalCoursesUser)}
                       </td>
+
                       <td class="py-3 px-4">
                         <div class="flex items-center justify-between text-xs font-mono">
-                          <span class="font-extrabold ${isOverCap ? 'text-purple-700' : 'text-indigo-700'}">${formatEuro(displayedImmediate)}</span>
-                          <span class="text-[11px] text-slate-500">Reste: <strong>${formatEuro(remainingImmediate)}</strong></span>
+                          <span class="font-extrabold ${isOverCap ? 'text-purple-700' : 'text-indigo-700'}">${formatEuro(periodRemiseUsed)}</span>
+                          ${!isTotal ? `<span class="text-[11px] text-slate-500">Reste: <strong>${formatEuro(remainingImmediate)}</strong></span>` : `<span class="text-[10px] text-slate-400">Cumul</span>`}
                         </div>
-                        <div class="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mt-1">
-                          <div class="h-full ${isOverCap ? 'bg-purple-600' : pctImmediate >= 100 ? 'bg-rose-600' : 'bg-indigo-600'}" style="width: ${pctImmediate}%"></div>
-                        </div>
+                        ${!isTotal ? `
+                          <div class="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mt-1">
+                            <div class="h-full ${isOverCap ? 'bg-purple-600' : pctImmediate >= 100 ? 'bg-rose-600' : 'bg-indigo-600'}" style="width: ${pctImmediate}%"></div>
+                          </div>
+                        ` : ''}
                       </td>
+
                       <td class="py-3 px-3 text-right font-mono font-semibold text-slate-800">
                         ${formatEuro(totalRemiseDirecteUser)}
                       </td>
+
                       <td class="py-3 px-3 text-right font-mono font-semibold text-indigo-700">
                         +${formatEuro(totalDiffereCumulUser)}
                       </td>
+
                       <td class="py-3 px-3 text-right font-mono font-bold text-emerald-700">
                         -${formatEuro(totalDiffereUtiliseUser)}
                       </td>
+
                       <td class="py-3 px-3 text-right">
                         <span class="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 font-mono font-extrabold text-amber-800">
                           ${formatEuro(u.soldeDiffere)}
                         </span>
                       </td>
+
                       <td class="py-3 px-4 text-right">
                         <div class="flex items-center justify-end gap-1.5">
-                          <button onclick="openAdminCreateTicketModal('${u.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1" title="Forcer un ticket pour ce salarié">
+                          <button onclick="openAdminCreateTicketModal('${u.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1" title="Créer un ticket pour ce salarié">
                             <i class="fa-solid fa-plus"></i> Ticket
                           </button>
-                          <button onclick="inspectCollaboratorTickets('${u.id}')" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px]" title="Voir l'historique de ses tickets">
+                          <button onclick="inspectCollaboratorTickets('${u.id}')" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px]" title="Voir les tickets de ce salarié">
                             <i class="fa-solid fa-eye"></i>
+                          </button>
+                          <button onclick="openWelcomeCardModal('${u.id}')" class="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold text-[11px]" title="Panonceau d'accès & WhatsApp">
+                            <i class="fa-brands fa-whatsapp"></i>
                           </button>
                           <button onclick="resetSingleUserSoldeDiffere('${u.id}')" ${Number(u.soldeDiffere || 0) === 0 ? 'disabled' : ''} class="px-2 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:bg-slate-100 disabled:text-slate-300 text-white font-bold text-[10px]" title="Remettre le solde différé à 0€">
                             RAZ Solde
@@ -2461,14 +2583,14 @@
               ${filteredUsers.length > 0 ? `
                 <tfoot>
                   <tr class="bg-slate-100 border-t-2 border-slate-300 text-xs font-extrabold text-slate-900">
-                    <td class="py-3 px-4" colspan="2">TOTAUX MAGASIN (Période choisie)</td>
+                    <td class="py-3 px-4" colspan="2">TOTAUX (${periodLabel})</td>
                     <td class="py-3 px-3 text-center font-mono">${filteredValidatedTickets.length} val.</td>
                     <td class="py-3 px-3 text-right font-mono">${formatEuro(sumCoursesValidated)}</td>
-                    <td class="py-3 px-4 font-mono text-indigo-700">${formatEuro(totalDiscountUsedStore)} consommés</td>
+                    <td class="py-3 px-4 font-mono text-indigo-700">${formatEuro(totalDiscountUsedPeriod)}</td>
                     <td class="py-3 px-3 text-right font-mono">${formatEuro(filteredValidatedTickets.filter(t => t.typeRemise === 'DIRECT').reduce((s, t) => s + Number(t.montantRemise || 0), 0))}</td>
-                    <td class="py-3 px-3 text-right font-mono text-indigo-700">+${formatEuro(totalDiffereCumuleStore)}</td>
-                    <td class="py-3 px-3 text-right font-mono text-emerald-700">-${formatEuro(totalSoldeDiffereUtiliseStore)}</td>
-                    <td class="py-3 px-3 text-right font-mono text-amber-800">${formatEuro(totalSoldeDiffereStore)} (Actuel)</td>
+                    <td class="py-3 px-3 text-right font-mono text-indigo-700">+${formatEuro(totalDiffereCumulePeriod)}</td>
+                    <td class="py-3 px-3 text-right font-mono text-emerald-700">-${formatEuro(totalSoldeDiffereUtilisePeriod)}</td>
+                    <td class="py-3 px-3 text-right font-mono text-amber-800">${formatEuro(totalSoldeDiffereStore)}</td>
                     <td class="py-3 px-4"></td>
                   </tr>
                 </tfoot>
@@ -2479,45 +2601,50 @@
       `;
     }
 
-    /* SOUS-VUE ADMIN : TICKETS PAR SALARIÉ (Tri d'urgence optimisé) */
+    /* ==================== SOUS-VUE ADMIN : TICKETS PAR SALARIÉ (DEMANDES À TRAITER TOUT EN HAUT) ==================== */
     function renderAdminTicketsHTML() {
-      const collaborators = state.users
-        .filter(u => u.role !== 'ADMIN')
-        .sort((a, b) => `${a.nom} ${a.prenom}`.localeCompare(`${b.nom} ${b.prenom}`, 'fr'));
-
-      const isTicketUrgent = (status) => ['EXPIRE_VERS_ADMIN', 'REFUSE_PAR_MANAGER', 'DEMANDE_SPECIALE_ADMIN'].includes(status);
-
       const matchesStatusFilter = (t) => {
         if (state.adminTicketFilter === 'URGENT') {
-          return isTicketUrgent(t.status);
+          return isTicketToProcessByAdmin(t.status);
         }
         if (state.adminTicketFilter === 'ALL') return true;
         return t.status === state.adminTicketFilter;
       };
 
-      const countUrgent = state.tickets.filter(t => isTicketUrgent(t.status)).length;
+      // Liste globale des demandes à traiter par l'Admin (toujours placée tout en haut)
+      const allUrgentTickets = state.tickets
+        .filter(t => isTicketToProcessByAdmin(t.status) && (state.adminSelectedUserId === 'ALL' || t.userId === state.adminSelectedUserId))
+        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+      const countUrgent = state.tickets.filter(t => isTicketToProcessByAdmin(t.status)).length;
       const countSpecial = state.tickets.filter(t => t.status === 'DEMANDE_SPECIALE_ADMIN').length;
+
+      // Tri des collaborateurs : ceux qui ont des demandes à traiter apparaissent TOUT EN HAUT de la liste
+      const collaborators = state.users
+        .filter(u => u.role !== 'ADMIN')
+        .sort((a, b) => {
+          const urgentA = state.tickets.filter(t => t.userId === a.id && isTicketToProcessByAdmin(t.status)).length;
+          const urgentB = state.tickets.filter(t => t.userId === b.id && isTicketToProcessByAdmin(t.status)).length;
+          if (urgentA !== urgentB) return urgentB - urgentA;
+          return `${a.nom} ${a.prenom}`.localeCompare(`${b.nom} ${b.prenom}`, 'fr');
+        });
 
       const visibleCollaborators = state.adminSelectedUserId === 'ALL'
         ? collaborators
         : collaborators.filter(u => u.id === state.adminSelectedUserId);
 
       const orphanTickets = state.tickets.filter(
-        t => !state.users.some(user => user.id === t.userId) && matchesStatusFilter(t)
-      ).sort((a, b) => {
-        const aU = isTicketUrgent(a.status) ? 1 : 0;
-        const bU = isTicketUrgent(b.status) ? 1 : 0;
-        if (aU !== bU) return bU - aU;
-        return (b.createdAt || 0) - (a.createdAt || 0);
-      });
+        t => !state.users.some(u => u.id === t.userId) && matchesStatusFilter(t)
+      );
 
       return `
         <div class="space-y-4">
+          <!-- Barre de filtres -->
           <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
             <div class="flex flex-wrap gap-1.5">
               ${[
                 { id: 'ALL', label: 'Tous (' + state.tickets.length + ')' },
-                { id: 'URGENT', label: '🚨 À traiter (' + countUrgent + ')' },
+                { id: 'URGENT', label: '🚨 Demandes à traiter (' + countUrgent + ')' },
                 { id: 'DEMANDE_SPECIALE_ADMIN', label: '👑 Patron génial (' + countSpecial + ')' },
                 { id: 'EN_ATTENTE_MANAGER', label: '⏱️ Attente Manager' },
                 { id: 'VALIDE', label: '✓ Validés' },
@@ -2541,6 +2668,23 @@
             </div>
           </div>
 
+          <!-- SECTION PRIORITAIRE TOUT EN HAUT : DEMANDES À TRAITER -->
+          ${allUrgentTickets.length > 0 ? `
+            <div class="bg-white rounded-2xl shadow-md border-2 border-rose-500 overflow-hidden">
+              <div class="px-4 py-3 bg-rose-600 text-white flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <i class="fa-solid fa-triangle-exclamation animate-bounce"></i>
+                  <span class="font-extrabold text-sm uppercase tracking-wide">Demandes à traiter en priorité (${allUrgentTickets.length})</span>
+                </div>
+                <span class="text-xs font-semibold text-rose-100">Affichées tout en haut pour arbitrage immédiat</span>
+              </div>
+              <div class="divide-y divide-rose-200">
+                ${allUrgentTickets.map(ticket => renderAdminTicketRowHTML(ticket, true)).join('')}
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Liste par collaborateur (ceux ayant des demandes urgentes sont aussi triés en premier) -->
           ${visibleCollaborators.length === 0 ? `
             <div class="bg-white rounded-2xl p-8 text-center border border-slate-200 text-xs text-slate-500">
               Aucun collaborateur enregistré.
@@ -2549,36 +2693,44 @@
             const userTickets = state.tickets
               .filter(t => t.userId === u.id && matchesStatusFilter(t))
               .sort((a, b) => {
-                // Les tickets urgents remontent en priorité tout en haut
-                const aU = isTicketUrgent(a.status) ? 1 : 0;
-                const bU = isTicketUrgent(b.status) ? 1 : 0;
-                if (aU !== bU) return bU - aU;
+                const aUrgent = isTicketToProcessByAdmin(a.status) ? 1 : 0;
+                const bUrgent = isTicketToProcessByAdmin(b.status) ? 1 : 0;
+                if (aUrgent !== bUrgent) return bUrgent - aUrgent;
                 return (b.createdAt || 0) - (a.createdAt || 0);
               });
 
+            const userUrgentCount = userTickets.filter(t => isTicketToProcessByAdmin(t.status)).length;
+
             return `
-              <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div class="bg-white rounded-2xl shadow-sm border ${userUrgentCount > 0 ? 'border-rose-400' : 'border-slate-200'} overflow-hidden">
                 <div class="px-4 py-3 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3">
                   <div class="flex items-center gap-2.5">
-                    <div class="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-xs">
+                    <div class="w-8 h-8 rounded-lg ${userUrgentCount > 0 ? 'bg-rose-600' : 'bg-indigo-600'} text-white flex items-center justify-center font-bold text-xs">
                       ${u.prenom[0]}${u.nom[0]}
                     </div>
                     <div>
                       <span class="font-bold text-sm">${u.prenom} ${u.nom}</span>
                       <span class="text-xs text-slate-400 ml-2">${u.rayon} • ${u.role}</span>
+                      ${userUrgentCount > 0 ? `<span class="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500 text-white">${userUrgentCount} à traiter</span>` : ''}
                     </div>
                   </div>
 
                   <div class="flex flex-wrap items-center gap-3 text-xs">
                     <span class="text-slate-300">Remise immédiate : <strong class="font-mono text-white">${formatEuro(u.remiseUtiliseeMois)}/50€</strong></span>
                     <span class="text-indigo-300">Solde : <strong class="font-mono text-amber-300">${formatEuro(u.soldeDiffere)}</strong></span>
+                    <button onclick="openAdminCreateTicketModal('${u.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1">
+                      <i class="fa-solid fa-plus"></i> Ajouter un ticket
+                    </button>
+                    <button onclick="resetSingleUserSoldeDiffere('${u.id}')" ${Number(u.soldeDiffere || 0) === 0 ? 'disabled' : ''} class="px-2 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:bg-slate-700 disabled:text-slate-500 text-slate-950 font-bold text-[10px]">
+                      RAZ 0€
+                    </button>
                   </div>
                 </div>
 
                 <div class="divide-y divide-slate-200">
                   ${userTickets.length === 0 ? `
                     <div class="p-4 text-center text-xs text-slate-400">Aucun ticket dans ce filtre.</div>
-                  ` : userTickets.map(ticket => renderAdminTicketRowHTML(ticket)).join('')}
+                  ` : userTickets.map(ticket => renderAdminTicketRowHTML(ticket, false)).join('')}
                 </div>
               </div>
             `;
@@ -2587,11 +2739,11 @@
           ${orphanTickets.length > 0 && state.adminSelectedUserId === 'ALL' ? `
             <div class="bg-white rounded-2xl shadow-sm border border-slate-300 overflow-hidden">
               <div class="px-4 py-2.5 bg-slate-200 text-slate-800 font-bold text-xs flex items-center justify-between">
-                <span>Anciens collaborateurs supprimés</span>
+                <span>Anciens collaborateurs</span>
                 <span>${orphanTickets.length} ticket(s)</span>
               </div>
               <div class="divide-y divide-slate-200">
-                ${orphanTickets.map(ticket => renderAdminTicketRowHTML(ticket)).join('')}
+                ${orphanTickets.map(ticket => renderAdminTicketRowHTML(ticket, true)).join('')}
               </div>
             </div>
           ` : ''}
@@ -2599,14 +2751,16 @@
       `;
     }
 
-    function renderAdminTicketRowHTML(ticket) {
-      const isUrgentAdmin = ticket.status === 'EXPIRE_VERS_ADMIN' || ticket.status === 'REFUSE_PAR_MANAGER' || ticket.status === 'DEMANDE_SPECIALE_ADMIN';
+    function renderAdminTicketRowHTML(ticket, showOwnerName = false) {
+      const isUrgentAdmin = isTicketToProcessByAdmin(ticket.status);
+      const ownerInfo = getTicketOwnerDisplay(ticket);
 
       return `
-        <div class="p-4 ${ticket.status === 'DEMANDE_SPECIALE_ADMIN' ? 'bg-purple-50/40' : (isUrgentAdmin ? 'bg-rose-50/30' : 'hover:bg-slate-50')} transition flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div class="p-4 ${ticket.status === 'DEMANDE_SPECIALE_ADMIN' ? 'bg-purple-50/50' : (isUrgentAdmin ? 'bg-rose-50/40' : 'hover:bg-slate-50')} transition flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div class="space-y-1.5 flex-1">
             <div class="flex flex-wrap items-center gap-2">
               <span class="font-mono font-bold text-xs px-2 py-0.5 rounded bg-slate-900 text-white">${ticket.id}</span>
+              ${showOwnerName ? `<span class="font-bold text-xs text-slate-900 bg-slate-200 px-2 py-0.5 rounded">${ownerInfo.fullName} (${ownerInfo.rayon})</span>` : ''}
               ${getStatusBadgeHTML(ticket)}
               <span class="text-xs text-slate-400">${new Date(ticket.createdAt).toLocaleString('fr-FR')}</span>
             </div>
@@ -3139,7 +3293,7 @@
       renderApp();
     }
 
-    /* SOUS-VUE ADMIN : GESTION DES COMPTES (AVEC COLONNE REMISE IMMÉDIATE & BOUTON PANONCEAU WHATSAPP) */
+    /* SOUS-VUE ADMIN : GESTION DES COMPTES */
     function renderAdminUsersHTML() {
       return `
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
@@ -3475,7 +3629,8 @@
         role,
         remiseUtiliseeMois: 0.00,
         soldeDiffere: Number(soldeDiffere.toFixed(2)),
-        anneeSoldeDiffere: new Date().getFullYear()
+        cycleFevrierSolde: getCurrentFebCycleYear(),
+        launchReset2026Done: true
       };
 
       state.users.push(newUser);
@@ -3483,7 +3638,6 @@
       showToast(`Compte créé pour <strong>${prenom} ${nom}</strong>.`, 'success');
       renderApp();
 
-      // Ouvre immédiatement le panonceau d'accès prêt à copier / envoyer sur WhatsApp
       openWelcomeCardModal(newUser.id);
     }
 
@@ -3496,10 +3650,17 @@
       renderApp();
     }
 
-    /* MODALE VISUALISATION TICKET */
+    /* MODALE VISUALISATION TICKET (AVEC VERROUILLAGE DE CONFIDENTIALITÉ POUR LES MANAGERS) */
     function openReceiptModal(ticketId) {
       const ticket = state.tickets.find(t => t.id === ticketId);
       if (!ticket) return;
+
+      const currentUser = getCurrentUser();
+      if (currentUser && currentUser.role === 'MANAGER' && ticket.userId !== currentUser.id && ticket.status !== 'EN_ATTENTE_MANAGER') {
+        showToast('Accès refusé : l’historique des autres collaborateurs est réservé à l’Administrateur.', 'error');
+        return;
+      }
+
       const ownerInfo = getTicketOwnerDisplay(ticket);
 
       document.getElementById('modalTicketTitle').textContent = `${ticket.id} — ${ownerInfo.fullName}`;
