@@ -596,7 +596,8 @@
 
     const MONTHLY_CAP = 50.00;
     const TEN_MINUTES_MS = 10 * 60 * 1000;
-    const LAUNCH_ZERO_RESET_KEY = 'SOGEDIS15_LAUNCH_ZERO_RESET_2026_V1';
+    const CLEAN_SLATE_USERS_KEY = 'SOGEDIS15_CLEAN_SLATE_USERS_V2';
+    const CLEAN_SLATE_TICKETS_KEY = 'SOGEDIS15_CLEAN_SLATE_TICKETS_V2';
 
     const EMBEDDED_GITHUB_FIREBASE_CONFIG = {
       apiKey: "AIzaSyBt-CiujRdZJuNKHkuFKapDwkyzMO-PTrM",
@@ -707,53 +708,55 @@
       }
     }
 
-    /* REMISE À ZÉRO DE LANCEMENT (TOUS LES COMPTES SALARIÉS À 0€ : REMISE + CAGNOTTE) */
-    function checkAndApplyLaunchZeroReset() {
+    /* REMISE À ZÉRO INTÉGRALE DE LANCEMENT (COMPTES + INDICATEURS + PURGE TICKETS) */
+    function checkAndApplyCleanSlateUsersReset() {
       let alreadyApplied = false;
       try {
-        alreadyApplied = localStorage.getItem(LAUNCH_ZERO_RESET_KEY) === 'true';
+        alreadyApplied = localStorage.getItem(CLEAN_SLATE_USERS_KEY) === 'true';
       } catch (e) {
         alreadyApplied = false;
       }
       if (alreadyApplied) return;
 
       const currentCycleYear = getCurrentFeb1stCycleYear();
-      let modified = false;
-
       state.users.forEach(u => {
-        if (u.role !== 'ADMIN') {
-          if (Number(u.remiseUtiliseeMois || 0) !== 0 || Number(u.soldeDiffere || 0) !== 0) {
-            modified = true;
-          }
-          u.remiseUtiliseeMois = 0.00;
-          u.soldeDiffere = 0.00;
-          u.cycleFebSoldeDiffere = currentCycleYear;
-          u.anneeSoldeDiffere = currentCycleYear;
-          syncUserToCloud(u);
-        }
+        u.remiseUtiliseeMois = 0.00;
+        u.soldeDiffere = 0.00;
+        u.cycleFebSoldeDiffere = currentCycleYear;
+        u.anneeSoldeDiffere = currentCycleYear;
+        syncUserToCloud(u);
       });
 
       try {
-        localStorage.setItem(LAUNCH_ZERO_RESET_KEY, 'true');
+        localStorage.setItem(CLEAN_SLATE_USERS_KEY, 'true');
       } catch (e) {}
-
-      if (modified) {
-        showToast('🚀 <strong>Lancement :</strong> Tous les comptes salariés (remises & cagnottes) ont été remis à 0,00 €.', 'success');
-      }
     }
 
-    function resetAllAccountsForLaunch() {
+    async function resetAllAccountsForLaunch() {
       const currentCycleYear = getCurrentFeb1stCycleYear();
-      state.users.forEach(u => {
-        if (u.role !== 'ADMIN') {
-          u.remiseUtiliseeMois = 0.00;
-          u.soldeDiffere = 0.00;
-          u.cycleFebSoldeDiffere = currentCycleYear;
-          u.anneeSoldeDiffere = currentCycleYear;
-          syncUserToCloud(u);
-        }
-      });
-      showToast('🚀 Tous les comptes salariés (remise immédiate 50€ + cagnotte différée) ont été remis à 0,00 €.', 'success');
+
+      // 1. Purge de tous les tickets existants pour remettre 100% des indicateurs (courses, différé cumulé, différé utilisé, nb tickets) à 0
+      const ticketsToDelete = [...state.tickets];
+      state.tickets = [];
+      for (const t of ticketsToDelete) {
+        await deleteTicketFromCloud(t.id);
+      }
+
+      // 2. Remise à 0,00 € de tous les compteurs individuels des comptes (remise immédiate + cagnotte différée)
+      for (const u of state.users) {
+        u.remiseUtiliseeMois = 0.00;
+        u.soldeDiffere = 0.00;
+        u.cycleFebSoldeDiffere = currentCycleYear;
+        u.anneeSoldeDiffere = currentCycleYear;
+        await syncUserToCloud(u);
+      }
+
+      try {
+        localStorage.setItem(CLEAN_SLATE_USERS_KEY, 'true');
+        localStorage.setItem(CLEAN_SLATE_TICKETS_KEY, 'true');
+      } catch (e) {}
+
+      showToast('🚀 <strong>Base saine activée :</strong> Tous les indicateurs, tickets, remises immédiates et cagnottes différées sont à 0,00 €.', 'success');
       renderApp();
     }
 
@@ -927,7 +930,7 @@
                 }
                 state.users = loadedUsers;
               }
-              checkAndApplyLaunchZeroReset();
+              checkAndApplyCleanSlateUsersReset();
               checkAndApplyAnnualFeb1stReset();
               renderApp();
             }
@@ -942,6 +945,33 @@
           getTicketsCollectionRef(),
           async (snapshot) => {
             if (!currentAuthUser) return;
+
+            let ticketsCleanedOnce = false;
+            try {
+              ticketsCleanedOnce = localStorage.getItem(CLEAN_SLATE_TICKETS_KEY) === 'true';
+            } catch (e) {
+              ticketsCleanedOnce = false;
+            }
+
+            if (!ticketsCleanedOnce) {
+              try {
+                localStorage.setItem(CLEAN_SLATE_TICKETS_KEY, 'true');
+              } catch (e) {}
+              const deletePromises = [];
+              snapshot.forEach(docSnap => {
+                const tData = docSnap.data();
+                if (tData && tData.id) {
+                  deletePromises.push(deleteTicketFromCloud(tData.id));
+                }
+              });
+              if (deletePromises.length > 0) {
+                await Promise.all(deletePromises);
+              }
+              state.tickets = [];
+              renderApp();
+              return;
+            }
+
             const legacyTicketIds = ['TCK-8405', 'TCK-8401', 'TCK-8402', 'TCK-8398', 'TCK-8395', 'TCK-8380', 'TCK-8374', 'TCK-8369', 'TCK-8362'];
             const loadedTickets = [];
             snapshot.forEach(docSnap => {
@@ -967,7 +997,7 @@
         if (!state.users || state.users.length === 0) {
           state.users = getDefaultUsers();
         }
-        checkAndApplyLaunchZeroReset();
+        checkAndApplyCleanSlateUsersReset();
         checkAndApplyAnnualFeb1stReset();
         renderApp();
       }
@@ -2039,7 +2069,6 @@
       const user = getCurrentUser();
       const container = document.getElementById('viewManager');
       const now = Date.now();
-      // Le Manager voit uniquement les tickets en attente dans la fenêtre des 10 min (aucun historique des autres comptes)
       const waitingTickets = state.tickets
         .filter(t => t.status === 'EN_ATTENTE_MANAGER' && (!t.expiresAt || t.expiresAt > now))
         .sort((a, b) => a.expiresAt - b.expiresAt);
@@ -2246,7 +2275,7 @@
             <button onclick="openAdminCreateTicketModal()" class="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
               <i class="fa-solid fa-plus"></i> Créer un ticket salarié
             </button>
-            <button onclick="resetAllAccountsForLaunch()" class="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 text-xs font-bold transition flex items-center gap-1.5" title="Remettre remises immédiates et cagnottes différées de tous les comptes à 0€">
+            <button onclick="resetAllAccountsForLaunch()" class="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 text-xs font-bold transition flex items-center gap-1.5" title="Purger les tickets et remettre tous les indicateurs, remises et cagnottes à 0€">
               <i class="fa-solid fa-rocket text-rose-600"></i> RAZ Lancement (Tout à 0€)
             </button>
             <button onclick="resetAllDeferredBalancesAnnual()" class="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold transition flex items-center gap-1.5">
@@ -2354,14 +2383,12 @@
       const currentKey = getCurrentMonthKey();
       const monthSet = new Set();
 
-      // Génère les 12 derniers mois passés
       const now = new Date();
       for (let i = 1; i <= 12; i++) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
         monthSet.add(getCurrentMonthKey(d));
       }
 
-      // Ajoute aussi tous les mois présents dans les tickets historiques
       state.tickets.forEach(t => {
         if (t.createdAt) {
           const k = getCurrentMonthKey(new Date(t.createdAt));
@@ -2415,7 +2442,6 @@
 
       const sumCoursesValidated = validatedTickets.reduce((acc, t) => acc + Number(t.montantCourses || 0), 0);
 
-      // En mois en cours, on prend le compteur mensuel ou le total des remises validées sur la période
       const totalDiscountUsedPeriod = state.adminDashboardPeriodMode === 'CURRENT_MONTH'
         ? eligibleUsers.reduce((acc, u) => acc + Number(u.remiseUtiliseeMois || 0), 0)
         : validatedTickets.reduce((acc, t) => acc + Number(t.montantRemise || 0), 0);
@@ -2698,7 +2724,6 @@
       const collaborators = state.users
         .filter(u => u.role !== 'ADMIN')
         .sort((a, b) => {
-          // Les salariés ayant des demandes à traiter remontent tout en haut !
           const urgentCountA = state.tickets.filter(t => t.userId === a.id && isTicketToProcessByAdmin(t)).length;
           const urgentCountB = state.tickets.filter(t => t.userId === b.id && isTicketToProcessByAdmin(t)).length;
           if (urgentCountA !== urgentCountB) return urgentCountB - urgentCountA;
@@ -3746,7 +3771,6 @@
       const currentUser = getCurrentUser();
       if (!currentUser) return;
 
-      // Confidentialité stricte : un Manager ne peut voir que ses propres tickets ou un ticket en cours de validation (<10 min)
       if (currentUser.role === 'MANAGER' && ticket.userId !== currentUser.id && ticket.status !== 'EN_ATTENTE_MANAGER') {
         showToast('Accès refusé : vous ne pouvez pas consulter l’historique des tickets des autres comptes.', 'error');
         return;
